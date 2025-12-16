@@ -1,6 +1,6 @@
 import time
 import traceback
-from secrets import HA_URL, TOKEN, AMBER_API_TOKEN, SITE_ID
+from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 
 # HA MQTT Python Lib: https://pypi.org/project/ha-mqtt-discoverable/
 # nano /etc/systemd/system/energy-manager.service
@@ -34,11 +34,11 @@ try:
     amber_data = amber.get_data()
     last_amber_update_timestamp = time.time()
 
-    plant = PlantControl.Plant(HA_URL, TOKEN, errors=True) 
+    plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
 
     ha = HomeAssistantAPI(
         base_url=HA_URL,
-        token=TOKEN,
+        token=HA_TOKEN,
         errors=True
     )
     ha_mqtt.controller_update_selector.set_state("Working")
@@ -47,7 +47,7 @@ try:
         ha=ha,
         ha_mqtt=ha_mqtt,
         plant=plant,
-        kwh_required_remaining=17, #kwh to be left in battery for overnight usage
+        kwh_required_remaining=20, #kwh to be left in battery for overnight usage
         good_sell_price=50 #price it is worth potentially running flat for
     )
 

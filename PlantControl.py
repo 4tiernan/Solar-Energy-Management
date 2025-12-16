@@ -170,5 +170,5 @@ class Plant:
         
 
 
-plant = Plant(HA_URL, TOKEN, errors=True) 
-plant.get_load_avg(3)
+#plant = Plant(HA_URL, TOKEN, errors=True) 
+#plant.get_load_avg(3)

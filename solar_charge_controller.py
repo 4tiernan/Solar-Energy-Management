@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, time
 from ha_api import HomeAssistantAPI
-from secrets import HA_URL, HA_TOKEN
+from api_token_secrets import HA_URL, HA_TOKEN
 
 ha = HomeAssistantAPI(
     base_url=HA_URL,

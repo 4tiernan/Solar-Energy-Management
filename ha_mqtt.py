@@ -1,7 +1,7 @@
 from paho.mqtt.client import Client, MQTTMessage
 from ha_mqtt_discoverable import Settings, DeviceInfo
 from ha_mqtt_discoverable.sensors import Select, SelectInfo, SensorInfo, Sensor, NumberInfo, Number
-from secrets import MQTT_HOST, MQTT_USER, MQTT_PASS
+from api_token_secrets import MQTT_HOST, MQTT_USER, MQTT_PASS
 import time
 
 
