@@ -84,6 +84,7 @@ def main_loop_code():
         amber_data = amber.get_data()
         last_amber_update_timestamp = time.time()
         print(f"Rate Limit Remaining: {amber.rate_limit_remaining}")
+        EC.update_values(amber_data=amber_data)
         update_sensors(amber_data)
 
         if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):

@@ -4,6 +4,7 @@ class EnergyController():
         self.ha_mqtt = ha_mqtt
         self.plant = plant
 
+        self.feedIn_price = 0
         self.target_dispatch_price = 0
         self.kwh_buffer_remaining = kwh_buffer_remaining
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
@@ -51,44 +52,47 @@ class EnergyController():
             pv=self.plant.max_pv_power,
             grid_export=0,
             grid_import=0)
-
-    def run(self, amber_data):
+        
+    def update_values(self, amber_data):
         self.plant.update_data()
-        feedIn_price = amber_data.feedIn_price
+        self.feedIn_price = amber_data.feedIn_price
 
         self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2 - 1),0)].price
         self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE))
 
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
 
+    def run(self, amber_data):
+        self.update_values(amber_data=amber_data)
+
         #Plant.display_data()
         #print(f"Current General Price: {round(general_price)} c/kWh")
         print("...")
         print(f"kWh Drained: {round(self.plant.kwh_till_full, 2)} kWh")
         print(f"kWh Remaining: {round(self.plant.kwh_stored_available, 2)} kWh")
-        print(f"Current FeedIn Price: {feedIn_price} c/kWh")
+        print(f"Current FeedIn Price: {self.feedIn_price} c/kWh")
         print(f"Max Forecasted FeedIn Price: {amber_data.feedIn_max_forecast_price} c/kWh")
         print(f"Target Dispatch Price: {self.target_dispatch_price} c/kWh")
 
-        good_price_conditions = feedIn_price >= self.good_sell_price and feedIn_price < 1000 and self.plant.kwh_stored_available > 5
+        good_price_conditions = self.feedIn_price >= self.good_sell_price and self.feedIn_price < 1000 and self.plant.kwh_stored_available > 5
 
-        if(feedIn_price >= self.target_dispatch_price and self.plant.kwh_stored_available > self.kwh_required_remaining or good_price_conditions):
+        if(self.feedIn_price >= self.target_dispatch_price and self.plant.kwh_stored_available > self.kwh_required_remaining or good_price_conditions):
             self.dispatch()
             if(self.last_control_mode != self.plant.get_plant_mode()):
                 self.last_control_mode = self.plant.get_plant_mode()
-                self.ha.send_notification(f"Dispatching at {feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+                self.ha.send_notification(f"Dispatching at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
             
-        elif(feedIn_price < self.target_dispatch_price or self.plant.kwh_stored_available <= self.kwh_required_remaining):
-            if(feedIn_price >= 0):
+        elif(self.feedIn_price < self.target_dispatch_price or self.plant.kwh_stored_available <= self.kwh_required_remaining):
+            if(self.feedIn_price >= 0):
                 self.export_excess_solar()
                 if(self.last_control_mode != self.plant.get_plant_mode()):
                     self.last_control_mode = self.plant.get_plant_mode()
-                    self.ha.send_notification(f"Exporting Excess Solar at {feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+                    self.ha.send_notification(f"Exporting Excess Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
             else:
                 self.self_consumption()
                 if(self.last_control_mode != self.plant.get_plant_mode()):
                     self.last_control_mode = self.plant.get_plant_mode()
-                    self.ha.send_notification(f"Self Consuming at {feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+                    self.ha.send_notification(f"Self Consuming at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
             
             
                 
