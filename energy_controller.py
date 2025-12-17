@@ -6,6 +6,7 @@ class EnergyController():
 
         self.target_dispatch_price = 0
         self.kwh_buffer_remaining = kwh_buffer_remaining
+        self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
         self.max_discharge_rate = max_discharge_rate
         self.hrs_of_discharge_available = 2
         self.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value, #minimum price that is worth dispatching the battery for
