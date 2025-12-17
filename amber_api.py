@@ -84,32 +84,35 @@ class AmberAPI:
         general_price_forecast = []
         feed_in_price_forecast = []
         date_format = "%Y-%m-%dT%H:%M:%SZ"
-        for i in self.send_request(url):
 
-            start = datetime.strptime(i["startTime"], date_format) + UTC_OFFSET
-            end   = datetime.strptime(i["endTime"], date_format) + UTC_OFFSET
-            
+        response = self.send_request(url)
+        if(len(response) >= 2):
+            for i in response:
+                start = datetime.strptime(i["startTime"], date_format) + UTC_OFFSET
+                end   = datetime.strptime(i["endTime"], date_format) + UTC_OFFSET
 
-            if i["channelType"] == "general":
-                price = i["perKwh"]   
-                interval = PriceForecast(price=price, start_time=start, end_time=end)
-                general_price_forecast.append(interval)
+                if i["channelType"] == "general":
+                    price = i["perKwh"]   
+                    interval = PriceForecast(price=price, start_time=start, end_time=end)
+                    general_price_forecast.append(interval)
 
-            elif i["channelType"] == "feedIn":
-                price = -i["perKwh"]   
-                interval = PriceForecast(price=price, start_time=start, end_time=end)
-                feed_in_price_forecast.append(interval)
+                elif i["channelType"] == "feedIn":
+                    price = -i["perKwh"]   
+                    interval = PriceForecast(price=price, start_time=start, end_time=end)
+                    feed_in_price_forecast.append(interval)
 
         return [general_price_forecast, feed_in_price_forecast]
     
     def get_current_prices(self):
         url = (f"{self.base}/sites/{self.site_id}/prices/current")
 
-        for i in self.send_request(url):
-            if(i["channelType"] == "general"):
-                general_price = i["perKwh"]
-            elif(i["channelType"] == "feedIn"):
-                feed_in_price = -i["perKwh"]
+        response = self.send_request(url)
+        if(len(response) >= 2):
+            for i in response:
+                if(i["channelType"] == "general"):
+                    general_price = i["perKwh"]
+                elif(i["channelType"] == "feedIn"):
+                    feed_in_price = -i["perKwh"]
 
         return [general_price, feed_in_price]
     
