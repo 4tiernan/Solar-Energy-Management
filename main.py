@@ -49,7 +49,7 @@ try:
         ha=ha,
         ha_mqtt=ha_mqtt,
         plant=plant,
-        kwh_required_remaining=20, #kwh to be left in battery for overnight usage
+        kwh_buffer_remaining=5, #kwh to be left in battery after forecasted usage
         good_sell_price=50 #price it is worth potentially running flat for
     )
 
