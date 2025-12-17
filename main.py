@@ -10,7 +10,7 @@ from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 # nano /opt/energy-manager/run.sh
 
 
-print("Starting latest...")
+print("Starting...")
 started = False
 
 def PrintError(e):
@@ -70,6 +70,7 @@ def update_sensors(amber_data):
     ha_mqtt.kwh_discharged_sensor.set_state(round(plant.kwh_till_full, 2))
     ha_mqtt.kwh_remaining_sensor.set_state(round(plant.kwh_stored_available, 2))
     ha_mqtt.target_discharge_sensor.set_state(round(EC.target_dispatch_price))
+    ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))
 
     EC.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value
 

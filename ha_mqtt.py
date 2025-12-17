@@ -128,11 +128,18 @@ kwh_remaining_sensor = CreateSensor(
     unit_of_measurement="kWh"
 )
 
+kwh_required_overnight_sensor = CreateSensor(
+    name = "kWh Required Overnight",
+    unique_id="kwh_required_overnight_python",
+    unit_of_measurement="kWh"
+)
+
 
 def initalise_entities():
     min_dispatch_price_number.entity.set_value(0)
     working_mode_sensor.set_state("Dispatching")
 
+    kwh_required_overnight_sensor.set_state(0)
     alive_time_sensor.set_state(0)
     alive_time_sensor.set_state(0)
     current_feedIn_sensor.set_state(0)

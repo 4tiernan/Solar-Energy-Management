@@ -2,6 +2,7 @@ from ha_api import HomeAssistantAPI
 from dataclasses import dataclass
 import datetime
 from zoneinfo import ZoneInfo
+import time
 
 HA_TZ = ZoneInfo("Australia/Brisbane") 
 
@@ -31,6 +32,10 @@ class Plant:
         self.max_pv_power = 21
         self.max_export_power = 21
         self.max_import_power = 21
+
+        self.last_load_data_retrival_timestamp = 0
+        self.avg_load_day = None
+
         self.update_data()
     def get_plant_mode(self):
         return self.ha.get_state("select.sigen_plant_remote_ems_control_mode")["state"]
@@ -90,9 +95,9 @@ class Plant:
             self.ha.set_select("select.sigen_plant_remote_ems_control_mode", control_mode)
         else:
             raise(f"Requested control mode '{control_mode}' is not a valid control mode!")
+        
 
-
-    def get_load_avg(self, days_ago):
+    def update_load_avg(self, days_ago):
         today = datetime.datetime.now(HA_TZ).date()
         end_date = today - datetime.timedelta(days=1)
         start_date = end_date - datetime.timedelta(days=days_ago)
@@ -102,7 +107,7 @@ class Plant:
 
 
         history = self.ha.get_history("sensor.sigen_plant_daily_load_consumption", start_time=start, end_time=end)
-        print(f"start: {start}  \n end: {end}\nhistory: {history[2].time.date()}")
+        #print(f"start: {start}  \n end: {end}\nhistory: {history[2].time.date()}")
 
         day = 0
         history_days = [[]]
@@ -134,7 +139,7 @@ class Plant:
             bin_avg = []
             for state in day: 
                 state.time = state.time.replace(
-                    minute=(state.time.minute // 5) * 5,
+                    minute=(state.time.minute // time_bucket_size) * time_bucket_size,
                     second=0,
                     microsecond=0,
                     tzinfo=HA_TZ
@@ -148,9 +153,10 @@ class Plant:
                             i = i + 1
 
                 if(state.time.time() == avg_day[i].time):
-                    bin_avg.append(state.state)
-                                
-            avg_day[i].states.append(sum(bin_avg) / len(bin_avg))   # calc avg for last period of day 
+                    if(state.state != None):
+                        bin_avg.append(state.state)
+            if(len(bin_avg) > 0):                    
+                avg_day[i].states.append(sum(bin_avg) / len(bin_avg))   # calc avg for last period of day 
 
         for interval in avg_day:
             if(len(interval.states) == 0):
@@ -162,13 +168,55 @@ class Plant:
         #    print(avg_day[i].states)       
 
         return avg_day
-     
+    
+    def get_load_avg(self, days_ago, hours_update_interval=24): # hours_update_interval: frequency to update the load date
+        if(time.time() - self.last_load_data_retrival_timestamp > hours_update_interval*60*60 or self.avg_load_day == None):
+            self.avg_load_day = self.update_load_avg(days_ago)
+            self.last_load_data_retrival_timestamp = time.time()
+        return self.avg_load_day
         
-    def forecast_consumption_amount(self, hours):
+    def forecast_consumption_amount(self, forecast_hours_from_now=None, forecast_till_time=None):
         avg_day = self.get_load_avg(days_ago=7)
+        rounded_current_time = self.round_minutes(datetime.datetime.now(), nearest_minute=5)
+        if(forecast_hours_from_now):
+            rounded_forecast_time = self.round_minutes(rounded_current_time + datetime.timedelta(hours=forecast_hours_from_now), nearest_minute=5).time()
+        elif(forecast_till_time):
+            rounded_forecast_time = self.round_minutes(forecast_till_time, nearest_minute=5)
+        else:
+            raise Exception("Must provide forecast hours or time to determine forecast!")
         
+        rounded_current_time = rounded_current_time.time()
+
+        starting_kwh = None
+        ending_kwh = None
+        for bin in avg_day:
+            #print(f"time: {bin.time} state: {bin.state}")
+            if(bin.time == rounded_current_time):
+                
+                starting_kwh = bin.state
+            elif(starting_kwh != None and bin.time == rounded_forecast_time):
+                ending_kwh = bin.state
         
+        if(ending_kwh == None):
+            for bin in avg_day:
+                if(bin.time == rounded_forecast_time):
+                    ending_kwh = bin.state + avg_day[-1].state # If the number of hours wraps past midnight, add the last state from the previous day to the total kwh
+        
+        return ending_kwh-starting_kwh
+    
+    def kwh_required_remaining(self, buffer=5, minimum_kwh_remaining=5):
+        forecast_kwh = self.forecast_consumption_amount(forecast_till_time=datetime.time(6, 0, 0))
+        return max(forecast_kwh, minimum_kwh_remaining) + buffer
+        
+    def round_minutes(self, time, nearest_minute):
+        return time.replace(
+            minute=(time.minute // nearest_minute) * nearest_minute,
+            second=0,
+            microsecond=0,
+            tzinfo=HA_TZ
+            )  
 
-
-#plant = Plant(HA_URL, TOKEN, errors=True) 
-#plant.get_load_avg(3)
+#from api_token_secrets import HA_URL, HA_TOKEN
+#plant = Plant(HA_URL, HA_TOKEN, errors=True) 
+#print(plant.kwh_required_remaining())
+#print(plant.forecast_consumption_amount(forecast_till_time=datetime.time(6, 0, 0)))
