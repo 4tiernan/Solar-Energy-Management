@@ -7,6 +7,7 @@ class EnergyController():
         self.feedIn_price = 0
         self.target_dispatch_price = 0
         self.kwh_buffer_remaining = kwh_buffer_remaining
+        self.solar_kwh_forecast_remaining = 0
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
         self.max_discharge_rate = max_discharge_rate
         self.hrs_of_discharge_available = 2
@@ -26,6 +27,17 @@ class EnergyController():
             control_mode="Command Discharging (PV First)",
             discharge=self.plant.max_discharge_power,
             charge=0,
+            pv=self.plant.max_pv_power,
+            grid_export=self.plant.max_export_power,
+            grid_import=0)
+        
+    def export_all_solar(self):
+        print("Exporting All Solar !!!!!!!!!!!!!")
+        self.ha_mqtt.working_mode_sensor.set_state("Exporting All Solar")
+        self.plant.set_control_limits(
+            control_mode="Command Charging (PV First)",
+            discharge=0,
+            charge=self.plant.max_charge_power,
             pv=self.plant.max_pv_power,
             grid_export=self.plant.max_export_power,
             grid_import=0)
@@ -60,7 +72,10 @@ class EnergyController():
         self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2 - 1),0)].price
         self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE))
 
+        self.solar_kwh_forecast_remaining = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
+
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
+        
 
     def run(self, amber_data):
         self.update_values(amber_data=amber_data)
@@ -82,6 +97,12 @@ class EnergyController():
                 self.last_control_mode = self.plant.get_plant_mode()
                 self.ha.send_notification(f"Dispatching at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
             
+        elif(self.solar_kwh_forecast_remaining + self.plant.kwh_stored_available > self.kwh_required_remaining + 20 and self.feedIn_price > 2):
+            self.export_all_solar()
+            if(self.last_control_mode != self.plant.get_plant_mode()):
+                self.last_control_mode = self.plant.get_plant_mode()
+                self.ha.send_notification(f"Selling All Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+
         elif(self.feedIn_price < self.target_dispatch_price or self.plant.kwh_stored_available <= self.kwh_required_remaining):
             if(self.feedIn_price >= 0):
                 self.export_excess_solar()
