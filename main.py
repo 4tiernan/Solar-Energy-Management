@@ -7,8 +7,10 @@ from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 # journalctl -u energy-manager -f
 # systemctl status energy-manager
 # source venv/bin/activate (from within cd opt/energy-manager)
+# nano /opt/energy-manager/run.sh
 
-print("Starting...")
+
+print("Starting latest...")
 started = False
 
 def PrintError(e):
