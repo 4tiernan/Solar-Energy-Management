@@ -65,6 +65,7 @@ automatic_control = True # var to keep track of whether the auto control switch 
 
 # Update HA MQTT sensors
 def update_sensors(amber_data):
+    EC.update_values(amber_data=amber_data)
     ha_mqtt.max_feedIn_sensor.set_state(round(amber_data.feedIn_max_forecast_price))
     ha_mqtt.current_feedIn_sensor.set_state(round(amber_data.feedIn_price))
     ha_mqtt.current_general_price_sensor.set_state(round(amber_data.general_price))
@@ -80,10 +81,11 @@ update_sensors(amber.get_data())
 
 next_amber_update_timestamp = time.time() #time to run the next amber update
 partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
+amber_data = amber.get_data()
 
 # Code runs every 2 seconds (to reduce cpu usage)
 def main_loop_code():
-    global automatic_control, next_amber_update_timestamp, partial_update
+    global automatic_control, next_amber_update_timestamp, partial_update, amber_data
     ha_mqtt.alive_time_sensor.set_state(round(time.time()-start_time,1))
 
 
@@ -101,7 +103,7 @@ def main_loop_code():
             real_price_offset = 20 # seconds after the period begins when the real price starts
             now_datetime = datetime.datetime.now()
             seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
-            EC.update_values(amber_data=amber_data)
+    
             update_sensors(amber_data)
             if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
                 automatic_control = True
@@ -116,11 +118,16 @@ def main_loop_code():
 
     if(ha.get_state("input_select.automatic_control_mode")["state"] != "On"):
         if(automatic_control == True):
-                #EC.self_consumption()
-                automatic_control = False
-                print(f"Automatic Control turned off. Self Consumption mode active")
-                ha.send_notification(f"Automatic Control turned off", "Self Consuming", "mobile_app_pixel_10_pro")
-        print("Auto Control Off")
+            #EC.self_consumption()
+            automatic_control = False
+            print(f"Automatic Control turned off.")
+            ha.send_notification(f"Automatic Control turned off", "Self Consuming", "mobile_app_pixel_10_pro")
+
+    elif(ha.get_state("input_select.automatic_control_mode")["state"] == "On" and automatic_control == False):
+                automatic_control = True
+                print(f"Automatic Control turned on.")
+                EC.run(amber_data=amber_data)
+                
             
     
 while True:

@@ -1,5 +1,5 @@
 class EnergyController():
-    def __init__(self, ha, ha_mqtt, plant, kwh_buffer_remaining = 5, max_discharge_rate = 15, MINIMUM_BATTERY_DISPATCH_PRICE = 5, good_sell_price = 50):
+    def __init__(self, ha, ha_mqtt, plant, kwh_buffer_remaining = 5, max_discharge_rate = 15, MINIMUM_BATTERY_DISPATCH_PRICE = 10, good_sell_price = 50):
         self.ha = ha
         self.ha_mqtt = ha_mqtt
         self.plant = plant
@@ -11,7 +11,7 @@ class EnergyController():
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
         self.max_discharge_rate = max_discharge_rate
         self.hrs_of_discharge_available = 2
-        self.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value, #minimum price that is worth dispatching the battery for
+        self.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value #minimum price that is worth dispatching the battery for
         self.good_sell_price = good_sell_price #price at which we want to run the battery almost flat to take advantage of
 
         self.last_control_mode = self.plant.get_plant_mode()
@@ -73,8 +73,8 @@ class EnergyController():
 
         self.hrs_of_discharge_available = max((self.plant.kwh_stored_available - self.kwh_required_remaining) / self.plant.max_export_power, 0) #constrain to not go negative
 
-        self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2 ),0)].price # get the number of 30 minute periods that the battery is allowed to discharge to 
-        self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE))
+        self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2),0)].price # get the number of 30 minute periods that the battery is allowed to discharge to
+        self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE)) 
         #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")
 
     def run(self, amber_data):
