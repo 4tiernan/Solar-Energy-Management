@@ -36,8 +36,8 @@ class EnergyController():
         self.ha_mqtt.working_mode_sensor.set_state("Exporting All Solar")
         self.plant.set_control_limits(
             control_mode="Command Charging (PV First)",
-            discharge=0,
-            charge=self.plant.max_charge_power,
+            discharge=self.plant.max_discharge_power,
+            charge=0,
             pv=self.plant.max_pv_power,
             grid_export=self.plant.max_export_power,
             grid_import=0)
