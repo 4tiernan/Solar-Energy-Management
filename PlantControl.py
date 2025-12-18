@@ -27,11 +27,11 @@ class Plant:
             "Command Discharging (PV First)",
             "Command Discharging (ESS First)"]
         self.rated_capacity = self.ha.get_numeric_state("sensor.sigen_plant_rated_energy_capacity")
-        self.max_discharge_power = 21
+        self.max_discharge_power = 24
         self.max_charge_power = 21
-        self.max_pv_power = 21
-        self.max_export_power = 21
-        self.max_import_power = 21
+        self.max_pv_power = 24
+        self.max_export_power = 15
+        self.max_import_power = 45
 
         self.last_load_data_retrival_timestamp = 0
         self.avg_load_day = None

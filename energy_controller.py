@@ -68,14 +68,14 @@ class EnergyController():
     def update_values(self, amber_data):
         self.plant.update_data()
         self.feedIn_price = amber_data.feedIn_price
-
-        self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2 - 1),0)].price
-        self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE))
-
         self.solar_kwh_forecast_remaining = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
-
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
-        
+
+        self.hrs_of_discharge_available = max((self.plant.kwh_stored_available - self.kwh_required_remaining) / self.plant.max_export_power, 0) #constrain to not go negative
+
+        self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2 ),0)].price # get the number of 30 minute periods that the battery is allowed to discharge to 
+        self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE))
+        #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")
 
     def run(self, amber_data):
         self.update_values(amber_data=amber_data)
