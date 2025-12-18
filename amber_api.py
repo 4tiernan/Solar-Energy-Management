@@ -48,16 +48,16 @@ class AmberAPI:
     def send_request(self, url):
         r = requests.get(url, headers=self.headers)
         self.rate_limit_remaining = r.headers.get("RateLimit-Remaining")
+        self.seconds_till_rate_limit_reset = r.headers.get("RateLimit-Reset")
+        #print(f"Seconds till reset: {self.seconds_till_rate_limit_reset}")
 
         # Check for rate limiting
         if r.status_code == 429:
-            limit_policy = r.headers.get("RateLimit-Policy")
-            if limit_policy:
-                max_requests = limit_policy.split(";")[0]
-                requests_window = limit_policy.split(";")[1].split("=")[1]
-                print(f"Exceeded Amber API request rate limit ({max_requests}) within {requests_window} second window.")
-                print(f"Waiting {requests_window} seconds before retrying")
-                time.sleep(int(requests_window))
+
+            if self.seconds_till_rate_limit_reset:
+                print(f"Exceeded Amber API request rate limit.")
+                print(f"Waiting {self.seconds_till_rate_limit_reset} seconds before retrying")
+                time.sleep(int(self.seconds_till_rate_limit_reset))
             else:
                 print(f"Exceeded Amber API request rate limit.")
                 print(f"Waiting 300 seconds before retrying")
@@ -139,9 +139,15 @@ class AmberAPI:
         return data
 
         
-'''
-amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
 
+from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
+amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
+url = (f"{amber.base}/sites/{amber.site_id}/prices/current")
+
+response = amber.send_request(url)
+print(response)
+
+'''
 [general_price, feed_in_price] = amber.get_current_prices()
 
 
