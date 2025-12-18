@@ -13,6 +13,7 @@ class PriceForecast:
 class amber_data:
     general_price: float
     feedIn_price: float
+    prices_estimated: bool
     general_max_forecast_price: float
     feedIn_max_forecast_price: float
     general_12hr_forecast: list[PriceForecast]
@@ -44,11 +45,22 @@ class AmberAPI:
         }
         self.errors = errors
         self.rate_limit_remaining = None
+        self.seconds_till_rate_limit_reset = None
+        self.data = None
     
     def send_request(self, url):
         r = requests.get(url, headers=self.headers)
         self.rate_limit_remaining = r.headers.get("RateLimit-Remaining")
         self.seconds_till_rate_limit_reset = r.headers.get("RateLimit-Reset")
+        if(self.rate_limit_remaining != None):
+            self.rate_limit_remaining = int(self.rate_limit_remaining)
+        else:
+            self.rate_limit_remaining = 0
+        if(self.seconds_till_rate_limit_reset != None):
+            self.seconds_till_rate_limit_reset = int(self.seconds_till_rate_limit_reset)
+        else: 
+            self.seconds_till_rate_limit_reset = 0
+
         #print(f"Seconds till reset: {self.seconds_till_rate_limit_reset}")
 
         # Check for rate limiting
@@ -56,9 +68,10 @@ class AmberAPI:
 
             if self.seconds_till_rate_limit_reset:
                 print(f"Exceeded Amber API request rate limit.")
-                print(f"Waiting {self.seconds_till_rate_limit_reset} seconds before retrying")
-                time.sleep(int(self.seconds_till_rate_limit_reset))
+                print(f"Waiting {self.seconds_till_rate_limit_reset+5} seconds before retrying")
+                time.sleep(int(self.seconds_till_rate_limit_reset+5))
             else:
+                print(r.headers)
                 print(f"Exceeded Amber API request rate limit.")
                 print(f"Waiting 300 seconds before retrying")
                 time.sleep(300)
@@ -111,24 +124,34 @@ class AmberAPI:
             for i in response:
                 if(i["channelType"] == "general"):
                     general_price = i["perKwh"]
+                    estimate = i['estimate']
                 elif(i["channelType"] == "feedIn"):
                     feed_in_price = -i["perKwh"]
+                    estimate = estimate or i['estimate']
 
-        return [general_price, feed_in_price]
+        return [general_price, feed_in_price, estimate]
     
-    def get_data(self):
-        [general_price, feed_in_price] = self.get_current_prices()
-        [general_price_forecast, feed_in_price_forecast] = self.get_forecast(next_intervals=24, resolution=30)
+    def get_data(self, partial_update=False):
+        [general_price, feed_in_price, estimate] = self.get_current_prices()
+        
+        if(self.data == None or partial_update == False):
+            [general_price_forecast, feed_in_price_forecast] = self.get_forecast(next_intervals=24, resolution=30)
 
-        storted_general_forecast = feed_in_price_forecast.copy()
-        storted_general_forecast.sort(key=lambda x: x.price, reverse=True)
+            storted_general_forecast = feed_in_price_forecast.copy()
+            storted_general_forecast.sort(key=lambda x: x.price, reverse=True)
 
-        storted_feed_in_forecast = feed_in_price_forecast.copy()
-        storted_feed_in_forecast.sort(key=lambda x: x.price, reverse=True)
+            storted_feed_in_forecast = feed_in_price_forecast.copy()
+            storted_feed_in_forecast.sort(key=lambda x: x.price, reverse=True)
+        else:
+            general_price_forecast = self.data.general_12hr_forecast
+            feed_in_price_forecast = self.data.feedIn_12hr_forecast
+            storted_general_forecast = self.data.general_12hr_forecast_sorted
+            storted_feed_in_forecast = self.data.feedIn_12hr_forecast_sorted
 
-        data = amber_data(
+        self.data = amber_data(
             general_price=round(general_price),
             feedIn_price=round(feed_in_price),
+            prices_estimated=estimate,
             general_max_forecast_price=round(storted_general_forecast[0].price),
             feedIn_max_forecast_price=round(storted_feed_in_forecast[0].price),
             general_12hr_forecast=general_price_forecast,
@@ -136,7 +159,7 @@ class AmberAPI:
             general_12hr_forecast_sorted=storted_general_forecast,
             feedIn_12hr_forecast_sorted=storted_feed_in_forecast
             )
-        return data
+        return self.data
 
         
 

@@ -1,4 +1,5 @@
 import time
+import datetime
 import traceback
 from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 
@@ -76,23 +77,42 @@ def update_sensors(amber_data):
     EC.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value
 
 update_sensors(amber.get_data())
+
+next_amber_update_timestamp = time.time() #time to run the next amber update
+partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
+
 # Code runs every 2 seconds (to reduce cpu usage)
 def main_loop_code():
-    global last_amber_update_timestamp, automatic_control
+    global automatic_control, next_amber_update_timestamp, partial_update
     ha_mqtt.alive_time_sensor.set_state(round(time.time()-start_time,1))
 
-    if(time.time() - last_amber_update_timestamp > 30):
-        amber_data = amber.get_data()
-        last_amber_update_timestamp = time.time()
-        print(f"Rate Limit Remaining: {amber.rate_limit_remaining}")
-        EC.update_values(amber_data=amber_data)
-        update_sensors(amber_data)
 
-        if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
-            automatic_control = True
-            EC.run(amber_data=amber_data)
-        else: 
-                print("Auto Control Off")
+    if(time.time() >= next_amber_update_timestamp):
+        if(partial_update):
+            amber_data = amber.get_data(partial_update=True)
+        else:
+            amber_data = amber.get_data()
+
+        if(amber_data.prices_estimated):
+            seconds_till_next_update = 10
+            partial_update = True # Make the next update a partial one
+        else:
+            partial_update = False
+            real_price_offset = 10 # seconds after the period begins when the real price starts
+            now_datetime = datetime.datetime.now()
+            seconds_till_next_update = 305 - ((now_datetime.minute * 60 + now_datetime.second) % 300)
+            EC.update_values(amber_data=amber_data)
+            update_sensors(amber_data)
+            if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+                automatic_control = True
+                EC.run(amber_data=amber_data)
+
+        print(f"Partial Update: {partial_update}")
+        print(f"Seconds till next update: {seconds_till_next_update}")
+        next_amber_update_timestamp = time.time() + seconds_till_next_update
+              
+
+        
 
     if(ha.get_state("input_select.automatic_control_mode")["state"] != "On"):
         if(automatic_control == True):
@@ -100,7 +120,8 @@ def main_loop_code():
                 automatic_control = False
                 print(f"Automatic Control turned off. Self Consumption mode active")
                 ha.send_notification(f"Automatic Control turned off", "Self Consuming", "mobile_app_pixel_10_pro")
-
+        print("Auto Control Off")
+            
     
 while True:
     try:
