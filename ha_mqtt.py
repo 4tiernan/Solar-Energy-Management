@@ -102,6 +102,11 @@ current_general_price_sensor = CreateSensor(
     unique_id="current_general_price_python",
     unit_of_measurement="c/kWh"
 )
+amber_api_calls_remaining_sensor = CreateSensor(
+    name = "Remaining API Calls",
+    unique_id="remaining_api_calls_python",
+    unit_of_measurement="calls"
+)
 
 max_feedIn_sensor = CreateSensor(
     name = "Max Forecasted 12hr Feed In",
@@ -138,7 +143,7 @@ kwh_required_overnight_sensor = CreateSensor(
 def initalise_entities():
     min_dispatch_price_number.entity.set_value(0)
     working_mode_sensor.set_state("Dispatching")
-
+    amber_api_calls_remaining_sensor.set_state(0)
     kwh_required_overnight_sensor.set_state(0)
     alive_time_sensor.set_state(0)
     alive_time_sensor.set_state(0)
