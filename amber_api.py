@@ -140,6 +140,7 @@ class AmberAPI:
 
         
 
+'''
 from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
 url = (f"{amber.base}/sites/{amber.site_id}/prices/current")
@@ -147,7 +148,6 @@ url = (f"{amber.base}/sites/{amber.site_id}/prices/current")
 response = amber.send_request(url)
 print(response)
 
-'''
 [general_price, feed_in_price] = amber.get_current_prices()
 
 
