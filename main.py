@@ -98,9 +98,9 @@ def main_loop_code():
             partial_update = True # Make the next update a partial one
         else:
             partial_update = False
-            real_price_offset = 10 # seconds after the period begins when the real price starts
+            real_price_offset = 20 # seconds after the period begins when the real price starts
             now_datetime = datetime.datetime.now()
-            seconds_till_next_update = 305 - ((now_datetime.minute * 60 + now_datetime.second) % 300)
+            seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
             EC.update_values(amber_data=amber_data)
             update_sensors(amber_data)
             if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
