@@ -6,6 +6,7 @@ from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 # HA MQTT Python Lib: https://pypi.org/project/ha-mqtt-discoverable/
 # nano /etc/systemd/system/energy-manager.service
 # journalctl -u energy-manager -f
+# journalctl -u energy-manager -n 10000 -f
 # systemctl status energy-manager
 # source venv/bin/activate (from within cd opt/energy-manager)
 # nano /opt/energy-manager/run.sh
