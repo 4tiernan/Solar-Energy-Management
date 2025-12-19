@@ -204,9 +204,9 @@ class Plant:
         
         return ending_kwh-starting_kwh
     
-    def kwh_required_remaining(self, buffer=5, minimum_kwh_remaining=5):
+    def kwh_required_remaining(self, buffer=5):
         forecast_kwh = self.forecast_consumption_amount(forecast_till_time=datetime.time(6, 0, 0))
-        return max(forecast_kwh, minimum_kwh_remaining) + buffer
+        return max(forecast_kwh, 0) + buffer
         
     def round_minutes(self, time, nearest_minute):
         return time.replace(
