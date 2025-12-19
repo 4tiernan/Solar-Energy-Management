@@ -75,11 +75,13 @@ def update_sensors(amber_data):
     ha_mqtt.target_discharge_sensor.set_state(round(EC.target_dispatch_price))
     ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))
     ha_mqtt.amber_api_calls_remaining_sensor.set_state(amber.rate_limit_remaining)
+    ha_mqtt.working_mode_sensor.set_state(EC.working_mode)
+    grid_export_power = round(ha.get_numeric_state("sensor.sigen_plant_grid_export_power"), 2)
+    ha_mqtt.system_state_sensor.set_state(EC.working_mode + f" {grid_export_power} @ {amber_data.feedIn_price} c/kWh")
 
     EC.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value
 
 update_sensors(amber.get_data())
-
 next_amber_update_timestamp = time.time() #time to run the next amber update
 partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
 amber_data = amber.get_data()
@@ -105,7 +107,6 @@ def main_loop_code():
             now_datetime = datetime.datetime.now()
             seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
     
-            update_sensors(amber_data)
             if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
                 automatic_control = True
                 EC.run(amber_data=amber_data)
@@ -113,7 +114,8 @@ def main_loop_code():
         print(f"Partial Update: {partial_update}")
         print(f"Seconds till next update: {seconds_till_next_update}")
         next_amber_update_timestamp = time.time() + seconds_till_next_update
-              
+
+    update_sensors(amber_data)
 
         
 

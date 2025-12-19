@@ -92,6 +92,13 @@ working_mode_sensor = CreateSensor(
     state_class = None
 )
 
+system_state_sensor = CreateSensor(
+    name = "System State",
+    unique_id="system_state_python",
+    unit_of_measurement=None,
+    state_class = None
+)
+
 current_feedIn_sensor = CreateSensor(
     name = "Feed In Price",
     unique_id="current_feed_in_price_python",
@@ -142,7 +149,8 @@ kwh_required_overnight_sensor = CreateSensor(
 
 def initalise_entities():
     min_dispatch_price_number.entity.set_value(0)
-    working_mode_sensor.set_state("Dispatching")
+    working_mode_sensor.set_state("Self Consumption")
+    system_state_sensor.set_state("Self Consumption")
     amber_api_calls_remaining_sensor.set_state(0)
     kwh_required_overnight_sensor.set_state(0)
     alive_time_sensor.set_state(0)
