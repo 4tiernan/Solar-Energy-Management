@@ -147,6 +147,10 @@ class AmberAPI:
             feed_in_price_forecast = self.data.feedIn_12hr_forecast
             storted_general_forecast = self.data.general_12hr_forecast_sorted
             storted_feed_in_forecast = self.data.feedIn_12hr_forecast_sorted
+            
+        if(estimate and self.data != None): # if prices are an estimate, just pass the old not estimated prices through
+            general_price = self.data.general_price
+            feed_in_price = self.data.feedIn_price
 
         self.data = amber_data(
             general_price=round(general_price),
