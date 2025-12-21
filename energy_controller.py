@@ -8,6 +8,7 @@ class EnergyController():
         self.target_dispatch_price = 0
         self.kwh_buffer_remaining = kwh_buffer_remaining
         self.solar_kwh_forecast_remaining = 0
+        self.kwh_energy_available = 0 # kWh of battery and solar available to use today
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
         self.max_discharge_rate = max_discharge_rate
         self.hrs_of_discharge_available = 2
@@ -73,7 +74,9 @@ class EnergyController():
         self.solar_kwh_forecast_remaining = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
 
-        self.hrs_of_discharge_available = max((self.plant.kwh_stored_available - self.kwh_required_remaining) / self.plant.max_export_power, 0) #constrain to not go negative
+        self.kwh_energy_available = max(self.solar_kwh_forecast_remaining - 10, 0) + self.plant.kwh_stored_available
+        
+        self.hrs_of_discharge_available = max((self.kwh_energy_available - self.kwh_required_remaining) / self.plant.max_export_power, 0) #constrain to not go negative
 
         self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2),0)].price # get the number of 30 minute periods that the battery is allowed to discharge to
         self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE)) 
@@ -86,26 +89,26 @@ class EnergyController():
         #print(f"Current General Price: {round(general_price)} c/kWh")
         print("...")
         print(f"kWh Drained: {round(self.plant.kwh_till_full, 2)} kWh")
-        print(f"kWh Remaining: {round(self.plant.kwh_stored_available, 2)} kWh")
+        print(f"kWh Energy Available: {round(self.kwh_energy_available, 2)} kWh")
         print(f"Current FeedIn Price: {self.feedIn_price} c/kWh")
         print(f"Max Forecasted FeedIn Price: {amber_data.feedIn_max_forecast_price} c/kWh")
         print(f"Target Dispatch Price: {self.target_dispatch_price} c/kWh")
 
         good_price_conditions = self.feedIn_price >= self.good_sell_price and self.feedIn_price < 1000 and self.plant.kwh_stored_available > 5
 
-        if(self.feedIn_price >= self.target_dispatch_price and self.plant.kwh_stored_available > self.kwh_required_remaining or good_price_conditions):
+        if(self.feedIn_price >= self.target_dispatch_price and self.kwh_energy_available > self.kwh_required_remaining or good_price_conditions):
             self.dispatch()
             if(self.last_control_mode != self.plant.get_plant_mode()):
                 self.last_control_mode = self.plant.get_plant_mode()
                 #self.ha.send_notification(f"Dispatching at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
             
-        elif(self.solar_kwh_forecast_remaining + self.plant.kwh_stored_available > self.kwh_required_remaining + 20 and self.feedIn_price > 2):
+        elif(self.solar_kwh_forecast_remaining + self.kwh_energy_available > self.kwh_required_remaining + 20 and self.feedIn_price > 2):
             self.export_all_solar()
             if(self.last_control_mode != self.plant.get_plant_mode()):
                 self.last_control_mode = self.plant.get_plant_mode()
                 #self.ha.send_notification(f"Selling All Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
 
-        elif(self.feedIn_price < self.target_dispatch_price or self.plant.kwh_stored_available <= self.kwh_required_remaining):
+        elif(self.feedIn_price < self.target_dispatch_price or self.kwh_energy_available <= self.kwh_required_remaining):
             if(self.feedIn_price >= 0):
                 self.export_excess_solar()
                 if(self.last_control_mode != self.plant.get_plant_mode()):
