@@ -73,8 +73,8 @@ class AmberAPI:
             else:
                 print(r.headers)
                 print(f"Exceeded Amber API request rate limit.")
-                print(f"Waiting 300 seconds before retrying")
-                time.sleep(300)
+                print(f"Waiting 30 seconds before retrying")
+                time.sleep(30)
             return self.send_request(url)
         
         return r.json()
