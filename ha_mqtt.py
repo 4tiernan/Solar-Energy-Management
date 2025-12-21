@@ -31,7 +31,6 @@ class CreateSelectInput():
     def callback_function(self, client: Client, user_data, message: MQTTMessage):
         self.state = message.payload.decode()
         self.entity.select_option(self.state)
-        print(f"Update Selector State:{self.state}")
         
     def set_state(self, state):
         if(state in self.options):
