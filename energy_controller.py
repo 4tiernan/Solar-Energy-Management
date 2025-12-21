@@ -74,7 +74,7 @@ class EnergyController():
         self.solar_kwh_forecast_remaining = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
 
-        self.kwh_energy_available = max(self.solar_kwh_forecast_remaining - 10, 0) + self.plant.kwh_stored_available
+        self.kwh_energy_available = self.plant.kwh_stored_available
         
         self.hrs_of_discharge_available = max((self.kwh_energy_available - self.kwh_required_remaining) / self.plant.max_export_power, 0) #constrain to not go negative
 
