@@ -78,6 +78,11 @@ min_dispatch_price_number = CreateNumberInput(
     unit_of_measurement="c/kWh"
 )
 
+base_load_sensor = CreateSensor(
+    name = "Base Load",
+    unique_id="base_load_python",
+    unit_of_measurement="w"
+)
 
 alive_time_sensor = CreateSensor(
     name = "Alive Time",
@@ -97,6 +102,12 @@ system_state_sensor = CreateSensor(
     unique_id="system_state_python",
     unit_of_measurement=None,
     state_class = None
+)
+
+effective_price_sensor = CreateSensor(
+    name = "Effective Price",
+    unique_id="effective_price_python",
+    unit_of_measurement="c/kWh"
 )
 
 current_feedIn_sensor = CreateSensor(
@@ -161,6 +172,8 @@ def initalise_entities():
     target_discharge_sensor.set_state(0)
     kwh_discharged_sensor.set_state(0)
     kwh_remaining_sensor.set_state(0)
+    effective_price_sensor.set_state(0)
+    base_load_sensor.set_state(0)
     time.sleep(10)
 
 #initalise_entities()

@@ -59,10 +59,42 @@ except Exception as e:
     PrintError(e)
 
 
-print("Configuration complete. Running")
+
 start_time = time.time()
 last_amber_update_timestamp = 0
 automatic_control = True # var to keep track of whether the auto control switch is on
+
+next_amber_update_timestamp = time.time() #time to run the next amber update
+partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
+amber_data = amber.get_data()
+
+def determine_effective_price(amber_data):
+    general_price = amber_data.general_price
+    feedIn_price = amber_data.feedIn_price
+    target_dispatch_price = EC.target_dispatch_price
+    remaining_solar_today = ha.get_numeric_state('sensor.solcast_pv_forecast_forecast_remaining_today')
+    forecast_load_till_morning = EC.kwh_required_remaining
+
+    base_load = plant.get_base_load_estimate() # kW estimated base load
+    solar_daytime = ha.get_numeric_state('sensor.solcast_pv_forecast_forecast_this_hour') > base_load # If producing more power than base load consider it during the solar day
+    available_energy = max(remaining_solar_today-10, 0) + plant.kwh_stored_available # kWh of energy available right now
+    energy_consumption_available = plant.kwh_till_full + plant.forecast_consumption_amount(forecast_till_time=datetime.time(18, 0, 0)) # kWh that can be used of the available solar
+
+    if(general_price < 0):
+        return general_price
+    elif(solar_daytime): # Solar > base load estimate
+        if(remaining_solar_today > energy_consumption_available): # There should be excess power that would be sold at the feed in price or wasted
+            return max(feedIn_price, 0)
+        elif(available_energy > forecast_load_till_morning): # Energy used will cut into feed in profits 
+            return target_dispatch_price
+        else:
+            return general_price
+    else: # Not solar daytime
+        if(plant.kwh_stored_available > forecast_load_till_morning): # More battery than required overnight, energy use will cut into feed in profits
+            return target_dispatch_price
+        else:
+            return general_price # default to the general price
+
 
 # Update HA MQTT sensors
 def update_sensors(amber_data):
@@ -78,13 +110,14 @@ def update_sensors(amber_data):
     ha_mqtt.working_mode_sensor.set_state(EC.working_mode)
     grid_export_power = round(ha.get_numeric_state("sensor.sigen_plant_grid_export_power"), 2)
     ha_mqtt.system_state_sensor.set_state(EC.working_mode + f" {grid_export_power} @ {amber_data.feedIn_price} c/kWh")
+    ha_mqtt.base_load_sensor.set_state(1000*plant.get_base_load_estimate()) # converted to w from kW
+    ha_mqtt.effective_price_sensor.set_state(determine_effective_price(amber_data)) 
 
     EC.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value
 
-update_sensors(amber.get_data())
-next_amber_update_timestamp = time.time() #time to run the next amber update
-partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
-amber_data = amber.get_data()
+update_sensors(amber_data)
+time.sleep(1)
+print("Configuration complete. Running")
 
 # Code runs every 2 seconds (to reduce cpu usage)
 def main_loop_code():

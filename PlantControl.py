@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import datetime
 from zoneinfo import ZoneInfo
 import time
+import numpy as np
 
 HA_TZ = ZoneInfo("Australia/Brisbane") 
 
@@ -35,6 +36,9 @@ class Plant:
 
         self.last_load_data_retrival_timestamp = 0
         self.avg_load_day = None
+
+        self.last_base_load_estimate_timestamp = 0
+        self.base_load_estimate = None
 
         self.update_data()
     def get_plant_mode(self):
@@ -95,9 +99,31 @@ class Plant:
             self.ha.set_select("select.sigen_plant_remote_ems_control_mode", control_mode)
         else:
             raise(f"Requested control mode '{control_mode}' is not a valid control mode!")
+    
+    def calculate_base_load(self, days_ago = 7):
+        today = datetime.datetime.now(HA_TZ).date()
+        end_date = today - datetime.timedelta(days=1)
+        start_date = end_date - datetime.timedelta(days=days_ago)
+
+        start = datetime.datetime.combine(start_date, datetime.time.min, tzinfo=HA_TZ)
+        end = datetime.datetime.combine(end_date, datetime.time.min, tzinfo=HA_TZ)
+
+        load_state_history = self.ha.get_history("sensor.sigen_plant_consumed_power", start_time=start, end_time=end)
+
+        load_history = [h.state for h in load_state_history]
+        self.base_load_estimate = np.percentile(load_history, 20)
+
+        return self.base_load_estimate
+    
+    def get_base_load_estimate(self, days_ago = 7, hours_update_interval=24): # Returns approximate base load in kW
+        if(time.time() - self.last_base_load_estimate_timestamp > hours_update_interval*60*60 or self.base_load_estimate == None):
+            self.base_load_estimate = self.calculate_base_load(days_ago)
+            self.last_base_load_estimate_timestamp = time.time()
+        return self.base_load_estimate
+
         
 
-    def update_load_avg(self, days_ago):
+    def update_load_avg(self, days_ago=7):
         today = datetime.datetime.now(HA_TZ).date()
         end_date = today - datetime.timedelta(days=1)
         start_date = end_date - datetime.timedelta(days=days_ago)
@@ -218,5 +244,4 @@ class Plant:
 
 #from api_token_secrets import HA_URL, HA_TOKEN
 #plant = Plant(HA_URL, HA_TOKEN, errors=True) 
-#print(plant.kwh_required_remaining())
-#print(plant.forecast_consumption_amount(forecast_till_time=datetime.time(6, 0, 0)))
+#print(plant.forecast_consumption_amount(forecast_till_time=datetime.time(18, 0, 0)))
