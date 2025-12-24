@@ -15,6 +15,7 @@ class EnergyController():
         self.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value #minimum price that is worth dispatching the battery for
         self.good_sell_price = good_sell_price #price at which we want to run the battery almost flat to take advantage of
         self.working_mode = "Self Consumption"
+        self.target_price_reduction_percentage = 80 # Percentage of ideal sell price to sell at
 
         self.last_control_mode = self.plant.get_plant_mode()
 
@@ -79,6 +80,7 @@ class EnergyController():
         self.hrs_of_discharge_available = max((self.kwh_energy_available - self.kwh_required_remaining) / self.plant.max_export_power, 0) #constrain to not go negative
 
         self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2),0)].price # get the number of 30 minute periods that the battery is allowed to discharge to
+        self.target_dispatch_price = (self.target_price_reduction_percentage/100.0) * self.target_dispatch_price # Slightly reduce the target dispatch price to capture more events that are still valuable given forecast uncertanty 
         self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE)) 
         #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")
 
