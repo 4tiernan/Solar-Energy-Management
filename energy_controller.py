@@ -104,11 +104,11 @@ class EnergyController():
                 self.last_control_mode = self.plant.get_plant_mode()
                 #self.ha.send_notification(f"Dispatching at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
             
-        #elif(self.solar_kwh_forecast_remaining + self.kwh_energy_available > self.kwh_required_remaining + 20 and self.feedIn_price > 2):
-        #    self.export_all_solar()
-        #    if(self.last_control_mode != self.plant.get_plant_mode()):
-        #        self.last_control_mode = self.plant.get_plant_mode()
-        #        #self.ha.send_notification(f"Selling All Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+        elif(self.solar_kwh_forecast_remaining + self.kwh_energy_available > self.kwh_required_remaining + 20 and self.feedIn_price > 2 and self.plant.solar_daytime):
+            self.export_all_solar()
+            if(self.last_control_mode != self.plant.get_plant_mode()):
+                self.last_control_mode = self.plant.get_plant_mode()
+                #self.ha.send_notification(f"Selling All Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
 
         elif(self.feedIn_price < self.target_dispatch_price or self.kwh_energy_available <= self.kwh_required_remaining):
             if(self.feedIn_price >= 0):
