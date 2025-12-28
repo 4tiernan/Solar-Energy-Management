@@ -49,7 +49,7 @@ class Plant:
         self.kwh_backup_buffer = (self.ha.get_numeric_state("number.sigen_plant_ess_backup_state_of_charge")/100.0) * self.rated_capacity
         self.kwh_stored_energy = self.ha.get_numeric_state("sensor.sigen_plant_available_max_discharging_capacity")
         self.kwh_stored_available = self.kwh_stored_energy - self.kwh_backup_buffer
-        self.kwh_charge_unusable = self.ha.get_numeric_state("number.sigen_plant_ess_charge_cut_off_state_of_charge") * self.rated_capacity # kWh of buffer to 100% IE the charge limit 
+        self.kwh_charge_unusable = (1-(self.ha.get_numeric_state("number.sigen_plant_ess_charge_cut_off_state_of_charge")/100.0)) * self.rated_capacity # kWh of buffer to 100% IE the charge limit 
         self.kwh_till_full = self.ha.get_numeric_state("sensor.sigen_plant_available_max_charging_capacity") - self.kwh_charge_unusable
         self.battery_kw = self.ha.get_numeric_state("sensor.reversed_battery_power")
 
