@@ -72,7 +72,7 @@ def determine_effective_price(amber_data):
     general_price = amber_data.general_price
     feedIn_price = amber_data.feedIn_price
     target_dispatch_price = EC.target_dispatch_price
-    remaining_solar_today = plant.solar_kw_remaining_today()
+    remaining_solar_today = plant.solar_kw_remaining_today
     forecast_load_till_morning = EC.kwh_required_remaining
 
     base_load = plant.get_base_load_estimate() # kW estimated base load
