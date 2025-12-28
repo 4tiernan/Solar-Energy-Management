@@ -122,8 +122,6 @@ print("Configuration complete. Running")
 # Code runs every 2 seconds (to reduce cpu usage)
 def main_loop_code():
     global automatic_control, next_amber_update_timestamp, partial_update, amber_data
-    ha_mqtt.alive_time_sensor.set_state(round(time.time()-start_time,1))
-
 
     if(time.time() >= next_amber_update_timestamp):
         if(partial_update):
@@ -173,8 +171,9 @@ while True:
             break
         
         main_loop_code()
-        
         time.sleep(2)
+
+        ha_mqtt.alive_time_sensor.set_state(round(time.time()-start_time,1))
         
     except Exception as e:
         PrintError(e)

@@ -4,6 +4,7 @@ import datetime
 from zoneinfo import ZoneInfo
 import time
 import numpy as np
+import math
 
 HA_TZ = ZoneInfo("Australia/Brisbane") 
 
@@ -100,7 +101,7 @@ class Plant:
         else:
             raise(f"Requested control mode '{control_mode}' is not a valid control mode!")
     
-    def calculate_base_load(self, days_ago = 7):
+    def calculate_base_load(self, days_ago = 7): # Calculate base load in kW
         today = datetime.datetime.now(HA_TZ).date()
         end_date = today - datetime.timedelta(days=1)
         start_date = end_date - datetime.timedelta(days=days_ago)
@@ -111,7 +112,12 @@ class Plant:
         load_state_history = self.ha.get_history("sensor.sigen_plant_consumed_power", start_time=start, end_time=end)
 
         load_history = [h.state for h in load_state_history]
-        self.base_load_estimate = np.percentile(load_history, 20)
+        
+        load_history_clean = [
+            v for v in load_history
+            if v is not None and not math.isnan(v)
+        ]
+        self.base_load_estimate = np.percentile(load_history_clean, 20)
 
         return self.base_load_estimate
     
@@ -244,4 +250,5 @@ class Plant:
 
 #from api_token_secrets import HA_URL, HA_TOKEN
 #plant = Plant(HA_URL, HA_TOKEN, errors=True) 
+#print(plant.get_base_load_estimate())
 #print(plant.forecast_consumption_amount(forecast_till_time=datetime.time(18, 0, 0)))
