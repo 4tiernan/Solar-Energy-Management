@@ -56,7 +56,7 @@ class Plant:
         self.solar_kw = self.ha.get_numeric_state("sensor.sigen_plant_pv_power")
         self.solar_kwh_today = self.ha.get_numeric_state("sensor.sigen_inverter_daily_pv_energy")
         self.solar_kw_remaining_today = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
-
+        self.solar_daytime = self.ha.get_numeric_state('sensor.solcast_pv_forecast_forecast_this_hour') > self.get_base_load_estimate()
         self.inverter_power = self.ha.get_numeric_state("sensor.sigen_plant_plant_active_power")
         self.grid_power = self.ha.get_numeric_state("sensor.sigen_plant_grid_active_power")
 
