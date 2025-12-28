@@ -72,11 +72,11 @@ def determine_effective_price(amber_data):
     general_price = amber_data.general_price
     feedIn_price = amber_data.feedIn_price
     target_dispatch_price = EC.target_dispatch_price
-    remaining_solar_today = ha.get_numeric_state('sensor.solcast_pv_forecast_forecast_remaining_today')
+    remaining_solar_today = plant.solar_kw_remaining_today()
     forecast_load_till_morning = EC.kwh_required_remaining
 
     base_load = plant.get_base_load_estimate() # kW estimated base load
-    solar_daytime = ha.get_numeric_state('sensor.solcast_pv_forecast_forecast_this_hour') > base_load # If producing more power than base load consider it during the solar day
+    solar_daytime = plant.solar_daytime # If producing more power than base load consider it during the solar day
     available_energy = max(remaining_solar_today-10, 0) + plant.kwh_stored_available # kWh of energy available right now
     energy_consumption_available = plant.kwh_till_full + plant.forecast_consumption_amount(forecast_till_time=datetime.time(18, 0, 0)) # kWh that can be used of the available solar
 
