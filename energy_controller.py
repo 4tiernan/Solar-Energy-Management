@@ -38,13 +38,24 @@ class EnergyController():
     def export_all_solar(self):
         print("Exporting All Solar !!!!!!!!!!!!!")
         self.working_mode = "Exporting All Solar"
-        self.plant.set_control_limits(
-            control_mode="Command Charging (PV First)",
-            discharge=self.plant.max_discharge_power,
-            charge=0,
-            pv=self.plant.max_pv_power,
-            grid_export=self.plant.max_export_power,
-            grid_import=0)
+
+        solar_buffer = 2 # Buffer to ensure load is covered by battery or solar
+        if(self.plant.load_power + solar_buffer < self.plant.solar_kw): # Let the battery charge with excess DC power available
+            self.plant.set_control_limits(
+                control_mode="Command Discharging (PV First)",
+                discharge=0,
+                charge=self.plant.max_charge_power,
+                pv=self.plant.max_pv_power,
+                grid_export=self.plant.max_export_power,
+                grid_import=0)
+        else: # Make sure the battery supplies the load if solar power is minimal
+            self.plant.set_control_limits(
+                control_mode="Command Charging (PV First)",
+                discharge=self.plant.max_discharge_power,
+                charge=0,
+                pv=self.plant.max_pv_power,
+                grid_export=self.plant.max_export_power,
+                grid_import=0)
 
     def export_excess_solar(self):
         print("Exporting Excess Solar !!!!!!!!!!!!!")
@@ -84,17 +95,20 @@ class EnergyController():
         self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE)) 
         #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")
 
-    def run(self, amber_data):
-        self.update_values(amber_data=amber_data)
-
-        #Plant.display_data()
-        #print(f"Current General Price: {round(general_price)} c/kWh")
+    def print_values(self, amber_data):
         print("...")
         print(f"kWh Drained: {round(self.plant.kwh_till_full, 2)} kWh")
         print(f"kWh Energy Available: {round(self.kwh_energy_available, 2)} kWh")
         print(f"Current FeedIn Price: {self.feedIn_price} c/kWh")
         print(f"Max Forecasted FeedIn Price: {amber_data.feedIn_max_forecast_price} c/kWh")
         print(f"Target Dispatch Price: {self.target_dispatch_price} c/kWh")
+
+    def run(self, amber_data):
+        self.update_values(amber_data=amber_data)
+
+        #Plant.display_data()
+        #print(f"Current General Price: {round(general_price)} c/kWh")
+        
 
         good_price_conditions = self.feedIn_price >= self.good_sell_price and self.feedIn_price < 1000 and self.plant.kwh_stored_available > 5
 

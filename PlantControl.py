@@ -59,6 +59,7 @@ class Plant:
         self.solar_daytime = self.ha.get_numeric_state('sensor.solcast_pv_forecast_forecast_this_hour') > self.get_base_load_estimate() # If producing more power than base load consider it during the solar day
         self.inverter_power = self.ha.get_numeric_state("sensor.sigen_plant_plant_active_power")
         self.grid_power = self.ha.get_numeric_state("sensor.sigen_plant_grid_active_power")
+        self.load_power = self.ha.get_numeric_state("sensor.sigen_plant_consumed_power")
 
         self.hours_till_full = 0
         self.hours_till_empty = 0

@@ -119,15 +119,17 @@ update_sensors(amber_data)
 time.sleep(1)
 print("Configuration complete. Running")
 
+real_amber_data = amber_data # only contains data that has the real price not the estimated ones
 # Code runs every 2 seconds (to reduce cpu usage)
 def main_loop_code():
-    global automatic_control, next_amber_update_timestamp, partial_update, amber_data
+    global automatic_control, next_amber_update_timestamp, partial_update, amber_data, real_amber_data
 
     if(time.time() >= next_amber_update_timestamp):
         if(partial_update):
             amber_data = amber.get_data(partial_update=True)
         else:
             amber_data = amber.get_data()
+            real_amber_data = amber_data
 
         if(amber_data.prices_estimated):
             seconds_till_next_update = 10
@@ -137,14 +139,16 @@ def main_loop_code():
             real_price_offset = 20 # seconds after the period begins when the real price starts
             now_datetime = datetime.datetime.now()
             seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
-    
-            if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
-                automatic_control = True
-                EC.run(amber_data=amber_data)
-
+            EC.print_values(amber_data)
+            
         print(f"Partial Update: {partial_update}")
         print(f"Seconds till next update: {seconds_till_next_update}")
         next_amber_update_timestamp = time.time() + seconds_till_next_update
+
+    if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+        automatic_control = True
+        EC.run(amber_data=real_amber_data)
+        print(f"running main control code price: {real_amber_data.feedIn_price}")
 
     update_sensors(amber_data)
 
