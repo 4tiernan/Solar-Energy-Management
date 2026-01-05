@@ -1,19 +1,18 @@
 class EnergyController():
-    def __init__(self, ha, ha_mqtt, plant, kwh_buffer_remaining = 5, max_discharge_rate = 15, MINIMUM_BATTERY_DISPATCH_PRICE = 10, good_sell_price = 50):
+    def __init__(self, ha, ha_mqtt, plant, buffer_percentage_remaining, max_discharge_rate = 15, MINIMUM_BATTERY_DISPATCH_PRICE = 10):
         self.ha = ha
         self.ha_mqtt = ha_mqtt
         self.plant = plant
 
         self.feedIn_price = 0
         self.target_dispatch_price = 0
-        self.kwh_buffer_remaining = kwh_buffer_remaining
+        self.buffer_percentage_remaining = buffer_percentage_remaining
         self.solar_kwh_forecast_remaining = 0
         self.kwh_energy_available = 0 # kWh of battery and solar available to use today
-        self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
+        self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer_percentage=self.buffer_percentage_remaining)
         self.max_discharge_rate = max_discharge_rate
         self.hrs_of_discharge_available = 2
         self.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value #minimum price that is worth dispatching the battery for
-        self.good_sell_price = good_sell_price #price at which we want to run the battery almost flat to take advantage of
         self.working_mode = "Self Consumption"
         self.target_price_reduction_percentage = 80 # Percentage of ideal sell price to sell at
 
@@ -111,9 +110,7 @@ class EnergyController():
 
         self.print_values(amber_data)
 
-        good_price_conditions = self.feedIn_price >= self.good_sell_price and self.feedIn_price < 1000 and self.plant.kwh_stored_available > 5
-
-        if(self.feedIn_price >= self.target_dispatch_price and self.kwh_energy_available > self.kwh_required_remaining or good_price_conditions):
+        if(self.feedIn_price >= self.target_dispatch_price and self.kwh_energy_available > self.kwh_required_remaining):
             self.working_mode = "Dispatching"
             if(self.last_control_mode != self.plant.get_plant_mode()):
                 self.last_control_mode = self.plant.get_plant_mode()

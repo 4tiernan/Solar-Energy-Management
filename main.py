@@ -51,13 +51,11 @@ try:
         ha=ha,
         ha_mqtt=ha_mqtt,
         plant=plant,
-        kwh_buffer_remaining=5, #kwh to be left in battery after forecasted usage
-        good_sell_price=50 #price it is worth potentially running flat for
+        buffer_percentage_remaining=20, # percentage to inflate predicted load consumption
     )
 
 except Exception as e:
     PrintError(e)
-
 
 
 start_time = time.time()
