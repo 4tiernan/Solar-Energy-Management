@@ -83,7 +83,7 @@ class EnergyController():
         self.plant.update_data()
         self.feedIn_price = amber_data.feedIn_price
         self.solar_kwh_forecast_remaining = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
-        self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer=self.kwh_buffer_remaining)
+        self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer_percentage=self.buffer_percentage_remaining)
 
         self.kwh_energy_available = self.plant.kwh_stored_available
         
