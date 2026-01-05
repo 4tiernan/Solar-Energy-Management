@@ -129,18 +129,18 @@ def main_loop_code():
             amber_data = amber.get_data(partial_update=True)
         else:
             amber_data = amber.get_data()
-            real_amber_data = amber_data
 
         if(amber_data.prices_estimated):
             seconds_till_next_update = 10
             partial_update = True # Make the next update a partial one
         else:
+            real_amber_data = amber_data
             partial_update = False
             real_price_offset = 20 # seconds after the period begins when the real price starts
             now_datetime = datetime.datetime.now()
             seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
-            EC.print_values(amber_data)
-            
+            EC.print_values(real_amber_data)
+
         print(f"Partial Update: {partial_update}")
         print(f"Seconds till next update: {seconds_till_next_update}")
         next_amber_update_timestamp = time.time() + seconds_till_next_update
