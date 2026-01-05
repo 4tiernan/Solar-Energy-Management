@@ -24,10 +24,9 @@ class EnergyController():
             self.self_consumption()
                 
     def dispatch(self):
-        print("DISPATCHING !!!!!!!!!!!!!!!")
         self.working_mode = "Dispatching"
-        
-        self.plant.set_control_limits(
+        self.plant.check_control_limits(
+            working_mode=self.working_mode,
             control_mode="Command Discharging (PV First)",
             discharge=self.plant.max_discharge_power,
             charge=0,
@@ -36,12 +35,12 @@ class EnergyController():
             grid_import=0)
         
     def export_all_solar(self):
-        print("Exporting All Solar !!!!!!!!!!!!!")
         self.working_mode = "Exporting All Solar"
 
         solar_buffer = 2 # Buffer to ensure load is covered by battery or solar
         if(self.plant.load_power + solar_buffer < self.plant.solar_kw): # Let the battery charge with excess DC power available
-            self.plant.set_control_limits(
+            self.plant.check_control_limits(
+                working_mode=self.working_mode,
                 control_mode="Command Discharging (PV First)",
                 discharge=0,
                 charge=self.plant.max_charge_power,
@@ -49,7 +48,8 @@ class EnergyController():
                 grid_export=self.plant.max_export_power,
                 grid_import=0)
         else: # Make sure the battery supplies the load if solar power is minimal
-            self.plant.set_control_limits(
+            self.plant.check_control_limits(
+                working_mode=self.working_mode,
                 control_mode="Command Charging (PV First)",
                 discharge=self.plant.max_discharge_power,
                 charge=0,
@@ -58,9 +58,9 @@ class EnergyController():
                 grid_import=0)
 
     def export_excess_solar(self):
-        print("Exporting Excess Solar !!!!!!!!!!!!!")
         self.working_mode = "Exporting Excess Solar"
-        self.plant.set_control_limits(
+        self.plant.check_control_limits(
+            working_mode=self.working_mode,
             control_mode="Maximum Self Consumption",
             discharge=self.plant.max_discharge_power,
             charge=self.plant.max_charge_power,
@@ -70,9 +70,9 @@ class EnergyController():
 
 
     def self_consumption(self):
-        print("SELF CONSUMPTION !!!!!!!!!!!!!")
         self.working_mode = "Self Consumption"
-        self.plant.set_control_limits(
+        self.plant.check_control_limits(
+            working_mode=self.working_mode,
             control_mode="Maximum Self Consumption",
             discharge=self.plant.max_discharge_power,
             charge=self.plant.max_charge_power,
@@ -108,33 +108,48 @@ class EnergyController():
 
         #Plant.display_data()
         #print(f"Current General Price: {round(general_price)} c/kWh")
-        
 
         good_price_conditions = self.feedIn_price >= self.good_sell_price and self.feedIn_price < 1000 and self.plant.kwh_stored_available > 5
 
         if(self.feedIn_price >= self.target_dispatch_price and self.kwh_energy_available > self.kwh_required_remaining or good_price_conditions):
-            self.dispatch()
+            self.working_mode == "Dispatching"
             if(self.last_control_mode != self.plant.get_plant_mode()):
                 self.last_control_mode = self.plant.get_plant_mode()
                 #self.ha.send_notification(f"Dispatching at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
             
         elif(self.solar_kwh_forecast_remaining + self.kwh_energy_available > self.kwh_required_remaining + 20 and self.feedIn_price > 2 and self.plant.solar_daytime):
-            self.export_all_solar()
+            self.working_mode = "Exporting All Solar"
             if(self.last_control_mode != self.plant.get_plant_mode()):
                 self.last_control_mode = self.plant.get_plant_mode()
                 #self.ha.send_notification(f"Selling All Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
 
         elif(self.feedIn_price < self.target_dispatch_price or self.kwh_energy_available <= self.kwh_required_remaining):
             if(self.feedIn_price >= 0):
-                self.export_excess_solar()
+                self.working_mode = "Exporting Excess Solar"
                 if(self.last_control_mode != self.plant.get_plant_mode()):
                     self.last_control_mode = self.plant.get_plant_mode()
                     #self.ha.send_notification(f"Exporting Excess Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
             else:
-                self.self_consumption()
+                self.working_mode = "Self Consumption"
                 if(self.last_control_mode != self.plant.get_plant_mode()):
                     self.last_control_mode = self.plant.get_plant_mode()
                     #self.ha.send_notification(f"Self Consuming at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
-            
+        
+        self.mainain_control_mode()
+
+    def mainain_control_mode(self):
+        
+        self.plant.update_data()
+        if(self.working_mode == "Self Consumption"):
+            self.self_consumption()
+        elif(self.working_mode == "Exporting Excess Solar"):  
+            self.export_excess_solar()        
+        elif(self.working_mode == "Exporting All Solar"):
+            self.export_all_solar()
+        elif(self.working_mode == "Dispatching"):
+            self.dispatch()
+        else:
+            self.self_consumption()
+            raise(f"Error, control mode {self.working_mode} not defined. Defaulting to self consumption.")
             
                 

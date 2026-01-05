@@ -88,6 +88,23 @@ class Plant:
     def update_ha_monitoring_entities():
         raise("SET THIS UP")
         #time till full/empty
+    
+    def check_control_limits(self, working_mode, control_mode, discharge, charge, pv, grid_export, grid_import):
+        current_control_mode = self.get_plant_mode()
+        curent_discharge_limit = self.ha.get_numeric_state("number.sigen_plant_ess_max_discharging_limit")
+        curent_charge_limit = self.ha.get_numeric_state("number.sigen_plant_ess_max_charging_limit")
+        curent_pv_limit = self.ha.get_numeric_state("number.sigen_plant_pv_max_power_limit")
+        curent_export_limit = self.ha.get_numeric_state("number.sigen_plant_grid_export_limitation")
+        curent_import_limit = self.ha.get_numeric_state("number.sigen_plant_grid_import_limitation")
+
+        a = current_control_mode != control_mode or curent_discharge_limit != discharge or curent_charge_limit != charge
+        b = curent_pv_limit != pv or curent_export_limit != grid_export or curent_import_limit != grid_import
+
+        if(a or b):
+            self.set_control_limits(control_mode, discharge, charge, pv, grid_export, grid_import)
+            print(f"{working_mode} !!!")
+            time.sleep(5) # Allow time for HA to update
+
 
 
     def set_control_limits(self, control_mode, discharge, charge, pv, grid_export, grid_import):
