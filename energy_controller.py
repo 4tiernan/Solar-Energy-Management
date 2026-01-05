@@ -109,10 +109,12 @@ class EnergyController():
         #Plant.display_data()
         #print(f"Current General Price: {round(general_price)} c/kWh")
 
+        self.print_values(amber_data)
+
         good_price_conditions = self.feedIn_price >= self.good_sell_price and self.feedIn_price < 1000 and self.plant.kwh_stored_available > 5
 
         if(self.feedIn_price >= self.target_dispatch_price and self.kwh_energy_available > self.kwh_required_remaining or good_price_conditions):
-            self.working_mode == "Dispatching"
+            self.working_mode = "Dispatching"
             if(self.last_control_mode != self.plant.get_plant_mode()):
                 self.last_control_mode = self.plant.get_plant_mode()
                 #self.ha.send_notification(f"Dispatching at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
@@ -138,7 +140,6 @@ class EnergyController():
         self.mainain_control_mode()
 
     def mainain_control_mode(self):
-        
         self.plant.update_data()
         if(self.working_mode == "Self Consumption"):
             self.self_consumption()
