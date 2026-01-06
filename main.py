@@ -145,7 +145,10 @@ def main_loop_code():
         next_amber_update_timestamp = time.time() + seconds_till_next_update
 
     update_sensors(amber_data)
-    EC.mainain_control_mode() # Maintain the control mode (mainly for export all solar)
+    
+    if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+        automatic_control = True
+        EC.mainain_control_mode() # Maintain the control mode (mainly for export all solar)
 
         
 
