@@ -51,7 +51,7 @@ try:
         ha=ha,
         ha_mqtt=ha_mqtt,
         plant=plant,
-        buffer_percentage_remaining=20, # percentage to inflate predicted load consumption
+        buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
     )
 
 except Exception as e:
@@ -145,7 +145,7 @@ def main_loop_code():
         next_amber_update_timestamp = time.time() + seconds_till_next_update
 
     update_sensors(amber_data)
-    
+
     if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
         automatic_control = True
         EC.mainain_control_mode() # Maintain the control mode (mainly for export all solar)
