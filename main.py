@@ -78,18 +78,20 @@ def determine_effective_price(amber_data):
     available_energy = max(remaining_solar_today-10, 0) + plant.kwh_stored_available # kWh of energy available right now
     energy_consumption_available = plant.kwh_till_full + plant.forecast_consumption_amount(forecast_till_time=datetime.time(18, 0, 0)) # kWh that can be used of the available solar
 
+    effective_dispatch_price = max(target_dispatch_price, feedIn_price)
+
     if(general_price < 0):
         return general_price
     elif(solar_daytime): # Solar > base load estimate
         if(remaining_solar_today > energy_consumption_available): # There should be excess power that would be sold at the feed in price or wasted
             return max(feedIn_price, 0)
         elif(available_energy > forecast_load_till_morning): # Energy used will cut into feed in profits 
-            return target_dispatch_price
+            return effective_dispatch_price
         else:
             return general_price
     else: # Not solar daytime
         if(plant.kwh_stored_available > forecast_load_till_morning): # More battery than required overnight, energy use will cut into feed in profits
-            return target_dispatch_price
+            return effective_dispatch_price
         else:
             return general_price # default to the general price
 
