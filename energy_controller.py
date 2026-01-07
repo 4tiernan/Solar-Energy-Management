@@ -14,7 +14,7 @@ class EnergyController():
         self.hrs_of_discharge_available = 2
         self.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value #minimum price that is worth dispatching the battery for
         self.working_mode = "Self Consumption"
-        self.target_price_reduction_percentage = 80 # Percentage of ideal sell price to sell at
+        self.target_price_reduction_percentage = 100 # Percentage of ideal sell price to sell at (Assumes the max price won't occour)
 
         self.last_control_mode = self.plant.get_plant_mode()
 
