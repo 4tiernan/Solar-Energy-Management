@@ -93,6 +93,7 @@ class EnergyController():
         self.target_dispatch_price = (self.target_price_reduction_percentage/100.0) * self.target_dispatch_price # Slightly reduce the target dispatch price to capture more events that are still valuable given forecast uncertanty 
         self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE)) 
         #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")
+        
 
     def print_values(self, amber_data):
         print("...")
@@ -108,7 +109,7 @@ class EnergyController():
         #Plant.display_data()
         #print(f"Current General Price: {round(general_price)} c/kWh")
 
-        self.print_values(amber_data)
+        last_working_mode = self.working_mode
 
         if(self.feedIn_price >= self.target_dispatch_price and self.kwh_energy_available > self.kwh_required_remaining):
             self.working_mode = "Dispatching"
@@ -134,6 +135,9 @@ class EnergyController():
                     self.last_control_mode = self.plant.get_plant_mode()
                     #self.ha.send_notification(f"Self Consuming at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
         
+        if(last_working_mode != self.working_mode):
+            self.print_values(amber_data)
+
         self.mainain_control_mode()
 
     def mainain_control_mode(self):

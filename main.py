@@ -140,7 +140,8 @@ def main_loop_code():
     
             if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
                 automatic_control = True
-                EC.run(amber_data=amber_data)
+                EC.print_values(amber_data)
+                
 
         print(f"Partial Update: {partial_update}")
         print(f"Seconds till next update: {seconds_till_next_update}")
@@ -150,7 +151,7 @@ def main_loop_code():
 
     if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
         automatic_control = True
-        EC.mainain_control_mode() # Maintain the control mode (mainly for export all solar)
+        EC.run(amber_data=amber_data) # Run the energy controller (every 2 seconds as we need to keep track of some things)
 
         
 
