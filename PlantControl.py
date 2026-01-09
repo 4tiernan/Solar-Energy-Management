@@ -34,6 +34,7 @@ class Plant:
         self.max_pv_power = 24
         self.max_export_power = 15
         self.max_import_power = 45
+        self.load_avg_days = 3
 
         self.last_load_data_retrival_timestamp = 0
         self.avg_load_day = None
@@ -60,6 +61,8 @@ class Plant:
         self.inverter_power = self.ha.get_numeric_state("sensor.sigen_plant_plant_active_power")
         self.grid_power = self.ha.get_numeric_state("sensor.sigen_plant_grid_active_power")
         self.load_power = self.ha.get_numeric_state("sensor.sigen_plant_consumed_power")
+        self.avg_daily_load = self.get_load_avg(days_ago=self.load_avg_days)[-1].state
+        
 
         self.hours_till_full = 0
         self.hours_till_empty = 0
@@ -267,7 +270,6 @@ class Plant:
             tzinfo=HA_TZ
             )  
 
-#from api_token_secrets import HA_URL, HA_TOKEN
-#plant = Plant(HA_URL, HA_TOKEN, errors=True) 
-#print(plant.get_base_load_estimate())
-#print(plant.forecast_consumption_amount(forecast_till_time=datetime.time(18, 0, 0)))
+from api_token_secrets import HA_URL, HA_TOKEN
+plant = Plant(HA_URL, HA_TOKEN, errors=True) 
+print(plant.get_load_avg(days_ago=3)[-1].state)

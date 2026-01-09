@@ -112,6 +112,7 @@ def update_sensors(amber_data):
     ha_mqtt.system_state_sensor.set_state(EC.working_mode + f" {grid_export_power} @ {amber_data.feedIn_price} c/kWh")
     ha_mqtt.base_load_sensor.set_state(1000*plant.get_base_load_estimate()) # converted to w from kW
     ha_mqtt.effective_price_sensor.set_state(determine_effective_price(amber_data)) 
+    ha_mqtt.avg_daily_load_sensor.set_state(round(plant.avg_daily_load,2))
 
     EC.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value
 

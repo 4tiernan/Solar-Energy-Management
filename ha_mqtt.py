@@ -157,6 +157,11 @@ kwh_required_overnight_sensor = CreateSensor(
     unit_of_measurement="kWh"
 )
 
+avg_daily_load_sensor = CreateSensor(
+    name = "Average Daily Load",
+    unique_id="avg_daily_load_python",
+    unit_of_measurement="kWh"
+)
 
 def initalise_entities():
     min_dispatch_price_number.entity.set_value(0)
@@ -174,6 +179,10 @@ def initalise_entities():
     kwh_remaining_sensor.set_state(0)
     effective_price_sensor.set_state(0)
     base_load_sensor.set_state(0)
+    avg_daily_load_sensor.set_state(0)
     time.sleep(10)
 
 #initalise_entities()
+
+#avg_daily_load_sensor.set_state(0)
+#time.sleep(10)
