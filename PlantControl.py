@@ -230,7 +230,7 @@ class Plant:
         return self.avg_load_day
         
     def forecast_consumption_amount(self, forecast_hours_from_now=None, forecast_till_time=None):
-        avg_day = self.get_load_avg(days_ago=7)
+        avg_day = self.get_load_avg(days_ago=self.load_avg_days)
         rounded_current_time = self.round_minutes(datetime.datetime.now(), nearest_minute=5)
         if(forecast_hours_from_now):
             rounded_forecast_time = self.round_minutes(rounded_current_time + datetime.timedelta(hours=forecast_hours_from_now), nearest_minute=5).time()
@@ -270,6 +270,6 @@ class Plant:
             tzinfo=HA_TZ
             )  
 
-from api_token_secrets import HA_URL, HA_TOKEN
-plant = Plant(HA_URL, HA_TOKEN, errors=True) 
-print(plant.get_load_avg(days_ago=3)[-1].state)
+#from api_token_secrets import HA_URL, HA_TOKEN
+#plant = Plant(HA_URL, HA_TOKEN, errors=True) 
+#print(plant.get_load_avg(days_ago=3)[-1].state)
