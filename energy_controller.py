@@ -110,30 +110,50 @@ class EnergyController():
         #print(f"Current General Price: {round(general_price)} c/kWh")
 
         last_working_mode = self.working_mode
+        self.working_mode = None
 
-        if(self.feedIn_price >= self.target_dispatch_price and self.kwh_energy_available > self.kwh_required_remaining):
-            self.working_mode = "Dispatching"
-            if(self.last_control_mode != self.plant.get_plant_mode()):
-                self.last_control_mode = self.plant.get_plant_mode()
-                #self.ha.send_notification(f"Dispatching at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+        # Check if the conditions for the current working mode are still satisfied
+        if(last_working_mode == "Dispatching" and (self.feedIn_price < self.target_dispatch_price or self.kwh_energy_available <= self.kwh_required_remaining)):
+            self.working_mode = None
             
-        elif(self.solar_kwh_forecast_remaining + self.kwh_energy_available > self.kwh_required_remaining + self.plant.kwh_till_full + 20 and self.feedIn_price > 2 and self.plant.solar_daytime):
-            self.working_mode = "Exporting All Solar"
-            if(self.last_control_mode != self.plant.get_plant_mode()):
-                self.last_control_mode = self.plant.get_plant_mode()
-                #self.ha.send_notification(f"Selling All Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+        elif(last_working_mode == "Exporting All Solar" and (self.solar_kwh_forecast_remaining + self.kwh_energy_available < self.kwh_required_remaining + self.plant.kwh_till_full + 20 or self.feedIn_price < 2 or not self.plant.solar_daytime)):
+            self.working_mode = None
 
-        elif(self.feedIn_price < self.target_dispatch_price or self.kwh_energy_available <= self.kwh_required_remaining):
-            if(self.feedIn_price >= 0):
-                self.working_mode = "Exporting Excess Solar"
+        elif(last_working_mode == "Exporting Excess Solar" and self.feedIn_price < 0):
+            self.working_mode = None
+
+        elif(last_working_mode == "Self Consumption"): #Self consumption has no exit requirements
+            self.working_mode = None
+
+        else:
+            self.working_mode = last_working_mode # Keep the last working mode
+
+
+        # current working mode conditions no longer satisfied, determine new working mode
+        if(self.working_mode == None):
+            if(self.feedIn_price >= self.target_dispatch_price and self.kwh_energy_available > self.kwh_required_remaining + 1):
+                self.working_mode = "Dispatching"
                 if(self.last_control_mode != self.plant.get_plant_mode()):
                     self.last_control_mode = self.plant.get_plant_mode()
-                    #self.ha.send_notification(f"Exporting Excess Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
-            else:
-                self.working_mode = "Self Consumption"
+                    #self.ha.send_notification(f"Dispatching at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+                
+            elif(self.solar_kwh_forecast_remaining + self.kwh_energy_available >= self.kwh_required_remaining + self.plant.kwh_till_full + 21 and self.feedIn_price >= 2 and self.plant.solar_daytime):
+                self.working_mode = "Exporting All Solar"
                 if(self.last_control_mode != self.plant.get_plant_mode()):
                     self.last_control_mode = self.plant.get_plant_mode()
-                    #self.ha.send_notification(f"Self Consuming at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+                    #self.ha.send_notification(f"Selling All Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+
+            elif(self.feedIn_price < self.target_dispatch_price or self.kwh_energy_available <= self.kwh_required_remaining):
+                if(self.feedIn_price >= 0):
+                    self.working_mode = "Exporting Excess Solar"
+                    if(self.last_control_mode != self.plant.get_plant_mode()):
+                        self.last_control_mode = self.plant.get_plant_mode()
+                        #self.ha.send_notification(f"Exporting Excess Solar at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
+                else:
+                    self.working_mode = "Self Consumption"
+                    if(self.last_control_mode != self.plant.get_plant_mode()):
+                        self.last_control_mode = self.plant.get_plant_mode()
+                        #self.ha.send_notification(f"Self Consuming at {self.feedIn_price} c/kWh", f"kWh Drained: {self.plant.kwh_till_full} kWh", "mobile_app_pixel_10_pro")
         
         if(last_working_mode != self.working_mode):
             self.print_values(amber_data)
