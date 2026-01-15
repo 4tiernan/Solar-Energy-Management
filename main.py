@@ -45,6 +45,9 @@ try:
         token=HA_TOKEN,
         errors=True
     )
+    if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+        ha.set_switch_state("switch.sigen_plant_remote_ems_controled_by_home_assistant", True)
+
     ha_mqtt.controller_update_selector.set_state("Working")
 
     EC = EnergyController(
