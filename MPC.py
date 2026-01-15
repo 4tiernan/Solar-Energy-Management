@@ -9,8 +9,11 @@ import pytz
 from amber_api import AmberAPI  # your AmberAPI code
 from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 from ha_api import HomeAssistantAPI
+import PlantControl
 
 amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
+
+plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
 
 ha = HomeAssistantAPI(
         base_url=HA_URL,
@@ -21,25 +24,39 @@ ha = HomeAssistantAPI(
 # -------------------------------
 # Config
 # -------------------------------
-N = 24 * 2  # 12 hours, 30-min timesteps
-dt = 0.5      # 30 minutes in hours
+
+forecast_hrs = 12
+dt_30min = 30   # minutes
+dt_5min   = 5    # minutes
+steps_per_price = dt_30min // dt_5min  # = 6
+steps_per_hr = 60 // dt_5min
+
+N_30min = forecast_hrs * (60//dt_30min)
+N_5min = forecast_hrs * (60//dt_5min)
+
+N = N_5min  # 12 hours, 5-min timesteps
+dt = dt_5min/60      # 5 minutes in hours
 
 battery_capacity = 40.0  # kWh
 soc_min = 0.1 * battery_capacity
 soc_max = 1 * battery_capacity
+soc_init = 0.40 * battery_capacity
 p_max_charge = 15  # kW
 p_max_discharge = 15  # kW
 efficiency = 0.95
-battery_discharge_cost = 0.08  # $/kWh
+battery_discharge_cost = 0.10  # $/kWh
 
 # -------------------------------
 # Forecasts
 # -------------------------------
 # Example load and solar (replace with HA data)
-load_30min = np.random.rand(int(N)) * 5       # kW
-solar_30min = np.random.rand(int(N)) * 15     # kW
+#load_30min = np.random.rand(int(N)) * 5       # kW
+#solar_30min = np.random.rand(int(N)) * 15     # kW
 
-load_30min = np.full(int(N), 2.0)  # 3 kW constant load
+load_5min = np.full(int(N_5min), 2.0)  # 3 kW constant load
+load_power_states = plant.forecast_load_power(forecast_hours_from_now=forecast_hrs) # Calculate the average load power
+load_5min = [powerstate.state for powerstate in load_power_states]
+
 
 solar_attributes = ha.get_state("sensor.solcast_pv_forecast_forecast_today")["attributes"]["detailedForecast"]
 #solar_forecast = np.array([item["pv_estimate"] for item in solar_attributes])
@@ -65,7 +82,7 @@ df["period_start"] = pd.to_datetime(df["period_start"])
 
 # Current time in same timezone
 now = pd.Timestamp.now(tz=df["period_start"].dt.tz)
-now = now.ceil("30min") #round to nearest 30 min
+now = now.ceil("5min") #round to nearest 30 min
 
 # Keep only future (or current) periods
 df_future = (
@@ -74,12 +91,19 @@ df_future = (
     .iloc[:N]
 )
 
+
 # Solar forecast (kW)
 solar_30min = df_future["pv_estimate"].to_numpy()
+solar_30min = solar_30min[:N_30min]
+solar_5min = np.interp(
+    np.arange(N_5min),
+    np.arange(0, N_5min, steps_per_price),
+    solar_30min
+)
 
-if len(solar_30min) < N:
+if len(solar_5min) < N_5min:
     raise RuntimeError(
-        f"Solcast forecast too short: {len(solar_30min)} < {N}"
+        f"Solcast forecast too short: {len(solar_5min)} < {N_5min}"
     )
 
 
@@ -94,21 +118,26 @@ if len(solar_30min) < N:
 # general_prices = np.array([p.price for p in data.general_12hr_forecast])
 # feedin_prices  = np.array([p.price for p in data.feedIn_12hr_forecast])
 
-# For testing purposes, we simulate it
+# Get Amber data
 data = amber.get_data(partial_update=False)
-[general_price_forecast, feed_in_price_forecast] = amber.get_forecast(next_intervals=48, resolution=30)
+[general_price_forecast, feed_in_price_forecast] = amber.get_forecast(next_intervals=N_30min, resolution=30)
+
+if(len(feed_in_price_forecast) < N_30min):
+    print(f"Amber only returned {len(feed_in_price_forecast)} forecast intervals when {N_30min} intervals were requested")
+    raise("Amber didn't return enough forecast intervals")
 
 # Extract forecast prices
-general_prices = np.array([pf.price for pf in general_price_forecast])       # buy price
-feedin_prices  = np.array([pf.price for pf in feed_in_price_forecast])       # sell price
+general_prices = np.array([pf.price for pf in general_price_forecast]) / 100      # buy price in $ from cents
+feedin_prices  = np.array([pf.price for pf in feed_in_price_forecast]) / 100      # sell price in $ from cents
 
-# Ensure we only take the next 12 hours (24 steps for 30-min intervals)
-general_prices = general_prices[:N]
-feedin_prices  = feedin_prices[:N]
+
+
+def expand_prices(prices_30m, steps_per_price):
+    return np.repeat(prices_30m, steps_per_price)
 
 # Assign to optimization variables
-prices_buy  = general_prices
-prices_sell = feedin_prices
+prices_buy  = expand_prices(general_prices,  steps_per_price)[:N_5min]
+prices_sell = expand_prices(feedin_prices, steps_per_price)[:N_5min]
 
 # -------------------------------
 # Variables
@@ -125,7 +154,6 @@ grid_export = cp.Variable(int(N), nonneg=True)
 # Constraints
 # -------------------------------
 constraints = []
-soc_init = 1 * battery_capacity
 constraints += [soc[0] == soc_init]
 
 for t in range(int(N)):
@@ -140,7 +168,7 @@ for t in range(int(N)):
     constraints += [soc[t+1] >= soc_min, soc[t+1] <= soc_max]
     
     # Grid import/export relation
-    net_grid = load_30min[t] - solar_30min[t] + p_charge[t] - p_discharge[t]
+    net_grid = load_5min[t] - solar_5min[t] + p_charge[t] - p_discharge[t]
     constraints += [grid_import[t] - grid_export[t] == net_grid]
     constraints += [grid_import[t] >= 0, grid_export[t] >= 0]
 
@@ -166,13 +194,18 @@ battery_power = p_charge.value - p_discharge.value
 grid_net = grid_import.value - grid_export.value
 hours = np.arange(int(N)) * dt
 
+cost_import = np.sum(grid_import.value * prices_buy)   # $ paid to grid
+revenue_export = np.sum(grid_export.value * prices_sell)  # $ earned from export
+grid_profit = revenue_export - cost_import
+print(f"Profit: ${round(grid_profit, 2)}")
+
 plt.figure(figsize=(14,8))
 
 # --------- Top plot: battery & net load ----------
 plt.subplot(2,1,1)
 plt.plot(hours, battery_power, label='Battery Power (kW)', color='blue')
-plt.plot(hours, load_30min, label='Load', color='orange', alpha=0.6)
-plt.plot(hours, solar_30min, label='Solar', color='yellow', alpha=1)
+plt.plot(hours, load_5min, label='Load', color='orange', alpha=0.6)
+plt.plot(hours, solar_5min, label='Solar', color='yellow', alpha=1)
 plt.plot(hours, grid_net, label='Grid Net Import (+ buy, - sell)', color='black', linestyle='--')
 plt.axhline(0, color='black', linewidth=0.5)
 plt.ylabel('Power (kW)')

@@ -228,6 +228,46 @@ class Plant:
             self.avg_load_day = self.update_load_avg(days_ago)
             self.last_load_data_retrival_timestamp = time.time()
         return self.avg_load_day
+    
+    def forecast_load_power(self, forecast_hours_from_now=None, forecast_till_time=None):
+        avg_day = self.get_load_avg(days_ago=self.load_avg_days)
+        rounded_current_time = self.round_minutes(datetime.datetime.now(), nearest_minute=5)
+        if(forecast_hours_from_now):
+            rounded_forecast_time = self.round_minutes(rounded_current_time + datetime.timedelta(hours=forecast_hours_from_now), nearest_minute=5).time()
+        elif(forecast_till_time):
+            rounded_forecast_time = self.round_minutes(forecast_till_time, nearest_minute=5)
+        else:
+            raise Exception("Must provide forecast hours or time to determine forecast!")
+        
+        rounded_current_time = rounded_current_time.time()
+
+        avg_day_1_kwh = []
+        avg_day_2_kwh = []
+        for bin in avg_day:
+            avg_day_1_kwh.append(StateClass(state=bin.state, states=[], time=bin.time))
+            avg_day_2_kwh.append(StateClass(state=bin.state + avg_day[-1].state, states=[], time=bin.time))# Add the last kwh reading to the first to seemlesly transition to day 2
+
+        avg_48hr_period_kwh = avg_day_1_kwh + avg_day_2_kwh
+
+        start_idx = None
+        end_idx = None
+        for i in range(len(avg_48hr_period_kwh)):
+            if(start_idx == None and avg_48hr_period_kwh[i].time == rounded_current_time):
+                start_idx = i
+            elif(start_idx != None and end_idx == None and avg_48hr_period_kwh[i].time == rounded_forecast_time):
+                end_idx = i
+                break
+
+        forecast_power = []
+        for i in range(start_idx, end_idx):
+            if(i == 0):
+                power = (avg_48hr_period_kwh[1].state - avg_48hr_period_kwh[0].state) / (5/60)
+            else:
+                power = (avg_48hr_period_kwh[i].state - avg_48hr_period_kwh[i-1].state) / (5/60)
+
+            forecast_power.append(StateClass(state=power, states=[], time=bin.time))
+        
+        return forecast_power
         
     def forecast_consumption_amount(self, forecast_hours_from_now=None, forecast_till_time=None):
         avg_day = self.get_load_avg(days_ago=self.load_avg_days)
@@ -272,4 +312,4 @@ class Plant:
 
 #from api_token_secrets import HA_URL, HA_TOKEN
 #plant = Plant(HA_URL, HA_TOKEN, errors=True) 
-#print(plant.get_load_avg(days_ago=3)[-1].state)
+#print(plant.forecast_load_power(forecast_hours_from_now=1))
