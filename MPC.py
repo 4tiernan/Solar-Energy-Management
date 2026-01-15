@@ -2,7 +2,6 @@
 #pip install cvxpy numpy pandas
 import numpy as np
 import cvxpy as cp
-import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import pytz
@@ -53,75 +52,17 @@ grid_import_penalty_cost = 0.05 # $/kWh penalty for using grid power
 # -------------------------------
 # Forecasts
 # -------------------------------
-# Example load and solar (replace with HA data)
-#load_30min = np.random.rand(int(N)) * 5       # kW
-#solar_30min = np.random.rand(int(N)) * 15     # kW
 
-load_5min = np.full(int(N_5min), 2.0)  # 3 kW constant load
+# Load Forecast
 load_power_states = plant.forecast_load_power(forecast_hours_from_now=forecast_hrs) # Calculate the average load power
 load_5min = [powerstate.state for powerstate in load_power_states]
 
-
-solar_attributes = ha.get_state("sensor.solcast_pv_forecast_forecast_today")["attributes"]["detailedForecast"]
-#solar_forecast = np.array([item["pv_estimate"] for item in solar_attributes])
-#solar_30min = np.append(solar[38:], solar[:38]) # increments of 30 min forecast
-
-# Get forecast list from HA
-today = ha.get_state(
-    "sensor.solcast_pv_forecast_forecast_today"
-)["attributes"]["detailedForecast"]
-
-tomorrow = ha.get_state(
-    "sensor.solcast_pv_forecast_forecast_tomorrow"
-)["attributes"]["detailedForecast"]
-
-# Combine
-forecast = today + tomorrow
-
-# Convert to DataFrame for easy time handling
-df = pd.DataFrame(forecast)
-
-# Parse timestamps (Solcast provides timezone-aware ISO strings)
-df["period_start"] = pd.to_datetime(df["period_start"])
-
-# Current time in same timezone
-now = pd.Timestamp.now(tz=df["period_start"].dt.tz)
-now = now.ceil("5min") #round to nearest 30 min
-
-# Keep only future (or current) periods
-df_future = (
-    df[df["period_start"] >= now]
-    .sort_values("period_start")
-    .iloc[:N]
-)
-
-
-# Solar forecast (kW)
-solar_30min = df_future["pv_estimate"].to_numpy()
-solar_30min = solar_30min[:N_30min]
-solar_5min = np.interp(
-    np.arange(N_5min),
-    np.arange(0, N_5min, steps_per_price),
-    solar_30min
-)
-solar_5min = solar_5min
-if len(solar_5min) < N_5min:
-    raise RuntimeError(
-        f"Solcast forecast too short: {len(solar_5min)} < {N_5min}"
-    )
-
+# Solar Forecast
+solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)
 
 # -------------------------------
 # Fetch Amber 12-hour forecast
 # -------------------------------
-# Replace with your actual API tokens and site ID
-# amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
-# data = amber.get_data(partial_update=False)
-
-# Use 12-hour general price forecast (30-min steps)
-# general_prices = np.array([p.price for p in data.general_12hr_forecast])
-# feedin_prices  = np.array([p.price for p in data.feedIn_12hr_forecast])
-
 # Get Amber data
 #data = amber.get_data(partial_update=False)
 
@@ -140,7 +81,7 @@ past_general_prices_5_min = expand_prices(past_general_prices_5_min,  steps_per_
 past_feed_in_prices_5_min = expand_prices(past_feed_in_prices_5_min,  steps_per_price)
 
 # Print previous Prices
-#for d in past_feed_in_5_min:
+#for d in past_feed_in_5_min:4
 #    print(f"Time: {d.start_time}  Price: {d.price}")
 
 # Get the 5 minutely price forecasts

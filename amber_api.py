@@ -129,7 +129,6 @@ class AmberAPI:
         date_format = "%Y-%m-%dT%H:%M:%SZ"
 
         response = self.send_request(url)
-        print(f"RESPONSE {response[0]}")
         if(len(response) >= 2):
             for i in response:
                 start = datetime.strptime(i["startTime"], date_format) + UTC_OFFSET
@@ -138,7 +137,6 @@ class AmberAPI:
                 if i["channelType"] == "general":
                     if("advancedPrice" in i):
                         price = i["advancedPrice"]["predicted"]
-                        print("advanced general")
                     else:
                         price = i["perKwh"]   
                     interval = PriceForecast(price=price, start_time=start, end_time=end)
@@ -147,7 +145,6 @@ class AmberAPI:
                 elif i["channelType"] == "feedIn":
                     if("advancedPrice" in i):
                         price = -i["advancedPrice"]["predicted"]
-                        print("advanced feedin")
                     else:
                         price = -i["perKwh"]    
                     interval = PriceForecast(price=price, start_time=start, end_time=end)
