@@ -25,7 +25,7 @@ ha = HomeAssistantAPI(
 # Config
 # -------------------------------
 
-forecast_hrs = 12
+forecast_hrs = 24
 dt_30min = 30   # minutes
 dt_5min   = 5    # minutes
 steps_per_price = dt_30min // dt_5min  # = 6
@@ -40,11 +40,11 @@ dt = dt_5min/60      # 5 minutes in hours
 battery_capacity = 40.0  # kWh
 soc_min = 0.1 * battery_capacity
 soc_max = 1 * battery_capacity
-soc_init = 0.40 * battery_capacity
+soc_init = 0.67 * battery_capacity
 p_max_charge = 15  # kW
 p_max_discharge = 15  # kW
 efficiency = 0.95
-battery_discharge_cost = 0.10  # $/kWh
+battery_discharge_cost = 0.01  # $/kWh
 
 # -------------------------------
 # Forecasts
@@ -100,7 +100,7 @@ solar_5min = np.interp(
     np.arange(0, N_5min, steps_per_price),
     solar_30min
 )
-
+solar_5min = solar_5min*1.2
 if len(solar_5min) < N_5min:
     raise RuntimeError(
         f"Solcast forecast too short: {len(solar_5min)} < {N_5min}"
@@ -171,6 +171,7 @@ for t in range(int(N)):
     net_grid = load_5min[t] - solar_5min[t] + p_charge[t] - p_discharge[t]
     constraints += [grid_import[t] - grid_export[t] == net_grid]
     constraints += [grid_import[t] >= 0, grid_export[t] >= 0]
+    constraints += [grid_export[t] + load_5min[t] <= 15]
 
 # -------------------------------
 # Objective: Minimise cost including battery discharge cost
@@ -194,10 +195,14 @@ battery_power = p_charge.value - p_discharge.value
 grid_net = grid_import.value - grid_export.value
 hours = np.arange(int(N)) * dt
 
-cost_import = np.sum(grid_import.value * prices_buy)   # $ paid to grid
-revenue_export = np.sum(grid_export.value * prices_sell)  # $ earned from export
+grid_kwh_import_per_interval = grid_import.value / steps_per_hr 
+grid_kwh_export_per_interval = grid_export.value / steps_per_hr 
+
+cost_import = np.sum(grid_kwh_import_per_interval * prices_buy)   # $ paid to grid
+revenue_export = np.sum(grid_kwh_export_per_interval * prices_sell)  # $ earned from export
 grid_profit = revenue_export - cost_import
 print(f"Profit: ${round(grid_profit, 2)}")
+print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
 
 plt.figure(figsize=(14,8))
 
