@@ -33,6 +33,8 @@ steps_per_hr = 60 // dt_5min
 
 N_30min = forecast_hrs * (60//dt_30min)
 N_5min = forecast_hrs * (60//dt_5min)
+amber_30min_intervals = (60//30)*12
+amber_5min_intervals = (60//5)*12
 
 N = N_5min  # 12 hours, 5-min timesteps
 dt = dt_5min/60      # 5 minutes in hours
@@ -123,32 +125,33 @@ if len(solar_5min) < N_5min:
 # Get Amber data
 #data = amber.get_data(partial_update=False)
 
+# Expand the 30 minutely price out to 5 minutely 
 def expand_prices(prices_30m, steps_per_price):
     return np.repeat(prices_30m, steps_per_price)
 
-[past_general_5_min, past_feed_in_5_min] = amber.get_past_prices(12*2, resolution=30)
-past_feed_in_5_min = list(reversed(past_feed_in_5_min))
-past_general_5_min = list(reversed(past_general_5_min))
-past_general_prices_5_min = [round(pf.price) for pf in past_general_5_min]
+# Get the past prices to form the 2nd half of the 24hr forecast due to the 12hr limit on forecasts
+[past_general_5_min, past_feed_in_5_min] = amber.get_past_prices(amber_30min_intervals, resolution=30)
+#past_feed_in_5_min = list(reversed(past_feed_in_5_min))
+#past_general_5_min = list(reversed(past_general_5_min))
+past_general_prices_5_min = [round(pf.price) for pf in past_general_5_min] # Extract the price and round it from the forecasts
 past_feed_in_prices_5_min = [round(pf.price) for pf in past_feed_in_5_min]
 
-past_general_prices_5_min = expand_prices(past_general_prices_5_min,  steps_per_price)
+past_general_prices_5_min = expand_prices(past_general_prices_5_min,  steps_per_price) # Expand the prices out to 5 minutely
 past_feed_in_prices_5_min = expand_prices(past_feed_in_prices_5_min,  steps_per_price)
 
-for d in past_feed_in_5_min:
-    print(f"Time: {d.start_time}  Price: {d.price}")
+# Print previous Prices
+#for d in past_feed_in_5_min:
+#    print(f"Time: {d.start_time}  Price: {d.price}")
 
-print(f"Past amber prices {past_feed_in_prices_5_min} len {len(past_feed_in_prices_5_min)}")
-
-
-[general_price_forecast_5_min, feed_in_price_forecast_5_min] = amber.get_forecast(next_intervals=12, resolution=5)
+# Get the 5 minutely price forecasts
+[general_price_forecast_5_min, feed_in_price_forecast_5_min] = amber.get_forecast(next_intervals=60//5, resolution=5)
 feed_in_price_forecast_5_min = [round(feedIn.price) for feedIn in feed_in_price_forecast_5_min][0:11] # select only the first 12 forecast intervals
 general_price_forecast_5_min = [round(general.price) for general in general_price_forecast_5_min][0:11]
 
-
-amber_30min_intervals = (60//30)*12
+# Get the 30 minutely forecast
 [general_price_forecast, feed_in_price_forecast] = amber.get_forecast(next_intervals=amber_30min_intervals, resolution=30)
 
+#Check amber returned the requested number of forecasts
 if(len(feed_in_price_forecast) < amber_30min_intervals):
     print(f"Amber only returned {len(feed_in_price_forecast)} forecast intervals when {amber_30min_intervals} intervals were requested")
     raise("Amber didn't return enough forecast intervals")
@@ -160,23 +163,18 @@ feed_in_price_forecast = [round(pf.price) for pf in feed_in_price_forecast]
 general_price_forecast = expand_prices(general_price_forecast,  steps_per_price)
 feed_in_price_forecast = expand_prices(feed_in_price_forecast, steps_per_price)
 
-print(f"Forecast amber prices {feed_in_price_forecast} len {len(feed_in_price_forecast)}")
+#print(f"Forecast amber prices {feed_in_price_forecast} len {len(feed_in_price_forecast)}")
 
 
 general_price_forecast = np.append(general_price_forecast, past_general_prices_5_min) # append the past prices to the 12hr forecast to allow for a 24hr prediction
 feed_in_price_forecast = np.append(feed_in_price_forecast, past_feed_in_prices_5_min)
 
-#print(f" expanded forecast {feed_in_price_forecast[0:19]} len {len(feed_in_price_forecast)}")
-
 feed_in_price_forecast[0:len(feed_in_price_forecast_5_min)] = feed_in_price_forecast_5_min
 general_price_forecast[0:len(general_price_forecast_5_min)] = general_price_forecast_5_min
-
-#print(f" combined forecast {feed_in_price_forecast[0:19]} len {len(feed_in_price_forecast)}")
 
 # Extract forecast prices
 general_prices = np.array(general_price_forecast) / 100      # buy price in $ from cents
 feedin_prices  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
-
 
 # Assign to optimization variables
 prices_buy  = general_prices[:N_5min]
@@ -258,7 +256,7 @@ plt.plot(hours, solar_5min, label='Solar', color='yellow', alpha=1)
 plt.plot(hours, grid_net, label='Grid Net Import (+ buy, - sell)', color='black', linestyle='--')
 plt.axhline(0, color='black', linewidth=0.5)
 plt.ylabel('Power (kW)')
-plt.title('Battery Schedule & Net Load with 12h Amber Forecast and Discharge Cost')
+plt.title('Battery Schedule & Net Load with 24h Amber Forecast and Discharge Cost')
 plt.legend()
 plt.grid(True)
 

@@ -129,6 +129,7 @@ class AmberAPI:
         date_format = "%Y-%m-%dT%H:%M:%SZ"
 
         response = self.send_request(url)
+        print(f"RESPONSE {response}")
         if(len(response) >= 2):
             for i in response:
                 start = datetime.strptime(i["startTime"], date_format) + UTC_OFFSET
