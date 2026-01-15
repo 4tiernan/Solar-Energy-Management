@@ -84,6 +84,36 @@ class AmberAPI:
         """Return all sites linked to your Amber account."""
         url = f"{self.base}/sites"
         return self.send_request(url)
+    
+    def get_past_prices(self, previous_intervals, resolution):
+        """Return 12 hours of prices before now for a given site."""
+        if(resolution != 30 and resolution != 5):
+            if(self.errors):
+                raise("Resolution must be 5 or 30 minutes not: "+str(resolution))
+
+        url = (f"{self.base}/sites/{self.site_id}/prices/current?next=0&previous={previous_intervals}&resolution={resolution}")
+
+        previous_general_prices = []
+        previous_feed_in_price = []
+        date_format = "%Y-%m-%dT%H:%M:%SZ"
+
+        response = self.send_request(url)
+        if(len(response) >= 2):
+            for i in response:
+                start = datetime.strptime(i["startTime"], date_format) + UTC_OFFSET
+                end   = datetime.strptime(i["endTime"], date_format) + UTC_OFFSET
+
+                if i["channelType"] == "general":
+                    price = i["perKwh"]   
+                    interval = PriceForecast(price=price, start_time=start, end_time=end)
+                    previous_general_prices.append(interval)
+
+                elif i["channelType"] == "feedIn":
+                    price = -i["perKwh"]   
+                    interval = PriceForecast(price=price, start_time=start, end_time=end)
+                    previous_feed_in_price.append(interval)
+
+        return [previous_general_prices, previous_feed_in_price]
         
 
     def get_forecast(self, next_intervals, resolution):
