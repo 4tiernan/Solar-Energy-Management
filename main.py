@@ -28,37 +28,34 @@ while(started == False):
         import ha_mqtt
         from amber_api import AmberAPI
         import PlantControl
+
+        amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
+        amber_data = amber.get_data()
+        last_amber_update_timestamp = time.time()
+
+        plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
+
+        ha = HomeAssistantAPI(
+            base_url=HA_URL,
+            token=HA_TOKEN,
+            errors=True
+        )
+        if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+            ha.set_switch_state("switch.sigen_plant_remote_ems_controled_by_home_assistant", True)
+
+        ha_mqtt.controller_update_selector.set_state("Working")
+
+        EC = EnergyController(
+            ha=ha,
+            ha_mqtt=ha_mqtt,
+            plant=plant,
+            buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
+        )
+
         started = True
     except Exception as e:
         PrintError(e)
         
-
-try: 
-    amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
-    amber_data = amber.get_data()
-    last_amber_update_timestamp = time.time()
-
-    plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
-
-    ha = HomeAssistantAPI(
-        base_url=HA_URL,
-        token=HA_TOKEN,
-        errors=True
-    )
-    if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
-        ha.set_switch_state("switch.sigen_plant_remote_ems_controled_by_home_assistant", True)
-
-    ha_mqtt.controller_update_selector.set_state("Working")
-
-    EC = EnergyController(
-        ha=ha,
-        ha_mqtt=ha_mqtt,
-        plant=plant,
-        buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
-    )
-
-except Exception as e:
-    PrintError(e)
 
 
 start_time = time.time()
