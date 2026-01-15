@@ -116,7 +116,7 @@ class AmberAPI:
         return [previous_general_prices, previous_feed_in_price]
         
 
-    def get_forecast(self, next_intervals, resolution):
+    def get_forecast(self, next_intervals, resolution, advanced_forecast = False):
         """Return 12 hours of prices from now for a given site."""
         if(resolution != 30 and resolution != 5):
             if(self.errors):
@@ -135,7 +135,7 @@ class AmberAPI:
                 end   = datetime.strptime(i["endTime"], date_format) + UTC_OFFSET
 
                 if i["channelType"] == "general":
-                    if("advancedPrice" in i):
+                    if("advancedPrice" in i and advanced_forecast == True):
                         price = i["advancedPrice"]["predicted"]
                     else:
                         price = i["perKwh"]   
@@ -143,7 +143,7 @@ class AmberAPI:
                     general_price_forecast.append(interval)
 
                 elif i["channelType"] == "feedIn":
-                    if("advancedPrice" in i):
+                    if("advancedPrice" in i and advanced_forecast == True):
                         price = -i["advancedPrice"]["predicted"]
                     else:
                         price = -i["perKwh"]    

@@ -85,12 +85,12 @@ past_feed_in_prices_5_min = expand_prices(past_feed_in_prices_5_min,  steps_per_
 #    print(f"Time: {d.start_time}  Price: {d.price}")
 
 # Get the 5 minutely price forecasts
-[general_price_forecast_5_min, feed_in_price_forecast_5_min] = amber.get_forecast(next_intervals=60//5, resolution=5)
+[general_price_forecast_5_min, feed_in_price_forecast_5_min] = amber.get_forecast(next_intervals=60//5, resolution=5, advanced_forecast=False)
 feed_in_price_forecast_5_min = [round(feedIn.price) for feedIn in feed_in_price_forecast_5_min][0:11] # select only the first 12 forecast intervals
 general_price_forecast_5_min = [round(general.price) for general in general_price_forecast_5_min][0:11]
 
 # Get the 30 minutely forecast
-[general_price_forecast, feed_in_price_forecast] = amber.get_forecast(next_intervals=amber_30min_intervals, resolution=30)
+[general_price_forecast, feed_in_price_forecast] = amber.get_forecast(next_intervals=amber_30min_intervals, resolution=30, advanced_forecast=False)
 
 #Check amber returned the requested number of forecasts
 if(len(feed_in_price_forecast) < amber_30min_intervals):
