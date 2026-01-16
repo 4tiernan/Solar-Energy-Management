@@ -43,12 +43,13 @@ soc_min = 0.1 * battery_capacity
 soc_max = 1 * battery_capacity
 soc_init = 0.99 * battery_capacity
 soc_init = plant.kwh_stored_available
-p_max_charge = 15  # kW
-p_max_discharge = 15  # kW
+p_max_charge = 21  # kW
+p_max_discharge = 21  # kW
 inverter_p_max = 15 # kW
+solar_dc_charge_max = 21  # kW (DC limit from solar to battery)
 efficiency = 0.95
 battery_export_cost = 0.10  # $/kWh
-grid_import_penalty_cost = 0.05 # $/kWh penalty for using grid power
+grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
 
 # -------------------------------
 # Forecasts
@@ -59,7 +60,7 @@ load_power_states = plant.forecast_load_power(forecast_hours_from_now=forecast_h
 load_5min = [powerstate.state for powerstate in load_power_states]
 
 # Solar Forecast
-solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)
+solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)*1.5
 
 # -------------------------------
 # Fetch Amber 12-hour forecast
@@ -129,9 +130,14 @@ p_charge = cp.Variable(int(N), nonneg=True)
 p_discharge = cp.Variable(int(N), nonneg=True)
 soc = cp.Variable(int(N)+1)
 
+solar_used = cp.Variable(int(N), nonneg=True) # Solar used out of the forecast value (allows for curtailment)
+solar_to_batt = cp.Variable(N, nonneg=True)
+
+
 # Grid import/export split
 grid_import = cp.Variable(int(N), nonneg=True)
 grid_export = cp.Variable(int(N), nonneg=True)
+
 
 # -------------------------------
 # Constraints
@@ -139,22 +145,39 @@ grid_export = cp.Variable(int(N), nonneg=True)
 constraints = []
 constraints += [soc[0] == soc_init]
 
+
 for t in range(int(N)):
     # SoC dynamics
     constraints += [soc[t+1] == soc[t] + dt * efficiency * p_charge[t] - dt / efficiency * p_discharge[t]]
-    
-    # Power limits
+
+     # SoC limits
+    constraints += [soc[t+1] >= soc_min, soc[t+1] <= soc_max]
+
+    # Battery Power limits
     constraints += [p_charge[t] <= p_max_charge]
     constraints += [p_discharge[t] <= p_max_discharge]
-    
-    # SoC limits
-    constraints += [soc[t+1] >= soc_min, soc[t+1] <= soc_max]
-    
-    # Grid import/export relation
-    net_grid = load_5min[t] - solar_5min[t] + p_charge[t] - p_discharge[t]
-    constraints += [grid_import[t] - grid_export[t] == net_grid]
-    constraints += [grid_import[t] >= 0, grid_export[t] >= 0]
-    constraints += [grid_export[t] + load_5min[t] <= inverter_p_max]
+
+    # DC Solar Constraints
+    constraints += [
+        solar_used[t] <= solar_5min[t],         # cannot exceed forecast
+        solar_used[t] <= solar_dc_charge_max,   # DC limit
+        solar_to_batt[t] <= solar_used[t],       # DC Battery solar charging must not be greater than solar used
+        solar_to_batt[t] <= p_charge[t]
+    ]
+
+    # AC Power Balance
+    solar_to_ac = solar_used[t] - solar_to_batt[t]
+    constraints += [
+        grid_import[t] - grid_export[t] 
+        == load_5min[t] 
+        - solar_5min[t] 
+        - solar_to_ac
+        + p_charge[t]
+        - p_discharge[t]
+    ]
+
+    # Inverter AC Limit
+    constraints += [solar_to_ac + p_discharge[t] + p_charge[t] <= inverter_p_max]
 
 # -------------------------------
 # Objective: Minimise cost including battery discharge cost
@@ -162,15 +185,19 @@ for t in range(int(N)):
 objective = cp.Minimize(
     cp.sum(cp.multiply(grid_import, prices_buy) * dt
            - cp.multiply(grid_export, prices_sell) * dt
-           + battery_export_cost * (grid_export - solar_5min) * dt
            + grid_import * grid_import_penalty_cost * dt)
 )
+
+# + battery_export_cost * (grid_export - solar_5min) * dt
 
 # -------------------------------
 # Solve
 # -------------------------------
 prob = cp.Problem(objective, constraints)
 prob.solve(solver=cp.ECOS)
+
+if prob.status not in ("optimal", "optimal_inaccurate"):
+    raise RuntimeError(f"MPC solve failed: {prob.status}")
 
 # -------------------------------
 # Results
