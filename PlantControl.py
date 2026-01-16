@@ -251,7 +251,12 @@ class Plant:
             avg_day_1_kwh.append(StateClass(state=bin.state, states=[], time=bin.time))
             avg_day_2_kwh.append(StateClass(state=bin.state + avg_day[-1].state, states=[], time=bin.time))# Add the last kwh reading to the first to seemlesly transition to day 2
 
+
         avg_48hr_period_kwh = avg_day_1_kwh + avg_day_2_kwh
+
+        #print(f"Avg1: {[round(a.state) for a in avg_day_1_kwh]}  \n\nAvg2: {[round(a.state) for a in avg_day_2_kwh]}")
+
+        #print(f"Avg48: {[round(a.state,2) for a in avg_48hr_period_kwh[490:510]]}")
 
         start_idx = None
         end_idx = None
@@ -261,6 +266,8 @@ class Plant:
             elif(start_idx != None and end_idx == None and avg_48hr_period_kwh[i].time == rounded_forecast_time):
                 end_idx = i
                 break
+        
+        #print(f"start: {start_idx}  stop: {end_idx}  total:{len(avg_48hr_period_kwh)}")
 
         forecast_power = []
         for i in range(start_idx, end_idx):
@@ -268,6 +275,9 @@ class Plant:
                 power = (avg_48hr_period_kwh[1].state - avg_48hr_period_kwh[0].state) / (5/60)
             else:
                 power = (avg_48hr_period_kwh[i].state - avg_48hr_period_kwh[i-1].state) / (5/60)
+
+            if(power <= 0):
+                power = (avg_48hr_period_kwh[-1].state - avg_48hr_period_kwh[0].state)/48 #If we get a weird reading, replace it with the average
 
             forecast_power.append(StateClass(state=power, states=[], time=bin.time))
         
@@ -352,4 +362,6 @@ class Plant:
 
 #from api_token_secrets import HA_URL, HA_TOKEN
 #plant = Plant(HA_URL, HA_TOKEN, errors=True) 
-#print(plant.forecast_load_power(forecast_hours_from_now=1))
+#load = plant.forecast_load_power(forecast_hours_from_now=24)
+#load = [round(load_state.state) for load_state in load]
+#print(load)
