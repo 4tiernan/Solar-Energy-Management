@@ -120,7 +120,7 @@ class EnergyController():
                      self.feedIn_price >= 2 and self.plant.solar_daytime)
         
         elif(mode == "Exporting Excess Solar"):
-            return (self.feedIn_price < self.target_dispatch_price or self.kwh_energy_available <= self.kwh_required_remaining)
+            return (self.feedIn_price >= 0)
         
         elif(mode == "Self Consumption"):
             return True
