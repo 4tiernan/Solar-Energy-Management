@@ -159,9 +159,20 @@ class Plant:
         history = self.ha.get_history("sensor.sigen_plant_daily_load_consumption", start_time=start, end_time=end)
         #print(f"start: {start}  \n end: {end}\nhistory: {history[2].time.date()}")
 
+        # Remove any invalid states from the history list (Unavailable, None, etc)
+        clean_history = []
+        for hist in history:
+            try:
+                if hist.state is not None:
+                    hist.state = float(hist.state)
+                    clean_history.append(hist)
+            except (ValueError, TypeError):
+                pass  # drop unknown/unavailable/etc
+        
+
         day = 0
         history_days = [[]]
-        for hist in history: 
+        for hist in clean_history: 
             if(hist.time.date() == start_date + datetime.timedelta(days=day)):
                 history_days[day].append(hist)
             elif(hist.time.date() == start_date + datetime.timedelta(days=day+1)):
@@ -170,8 +181,11 @@ class Plant:
                 history_days[day].append(hist)
 
         for day in history_days:
-            while(day[0].state > 0.05): # remove any states that were from the previous day, ie ensure we start with 0 for the day
+            day_states = [d.state for d in day]
+            min_state = min(day_states[0:int(len(day_states)/2)]) # Minimum state for first half of day (avoids getting next days minimum)
+            while(day[0].state > min_state): # remove any states that were from the previous day, ie ensure we start with 0 for the day
                 day.pop(0)
+
 
         avg_day = []
         dt = datetime.datetime.combine(
@@ -188,23 +202,30 @@ class Plant:
             i = 0
             bin_avg = []
             for state in day: 
+                # Round the state's time to the nearest time bin
                 state.time = state.time.replace(
                     minute=(state.time.minute // time_bucket_size) * time_bucket_size,
                     second=0,
                     microsecond=0,
                     tzinfo=HA_TZ
                     )
-                
-                if(state.time.time() != avg_day[i].time):
+                                
+                # If it doesn't match, then it should belong in the next bin, thus increment to the next bin
+                if(state.time.time() != avg_day[i].time): 
                     if(i < len(avg_day)-1):
                         if(state.time.time() == avg_day[i+1].time):
-                            avg_day[i].states.append(sum(bin_avg) / len(bin_avg))
+                            if(len(bin_avg) > 0):
+                                avg_day[i].states.append(sum(bin_avg) / len(bin_avg))
+                            else:
+                                avg_day[i].states.append(0) # Make the state 0 if we have no data for it 
                             bin_avg = []
                             i = i + 1
 
+                # If the state's rounded time matches the current array time bin, add it to the array
                 if(state.time.time() == avg_day[i].time):
                     if(state.state != None):
                         bin_avg.append(state.state)
+
             if(len(bin_avg) > 0):                    
                 avg_day[i].states.append(sum(bin_avg) / len(bin_avg))   # calc avg for last period of day 
 
