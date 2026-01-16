@@ -42,6 +42,7 @@ battery_capacity = 40.0  # kWh
 soc_min = 0.1 * battery_capacity
 soc_max = 1 * battery_capacity
 soc_init = 0.99 * battery_capacity
+soc_init = plant.kwh_stored_available
 p_max_charge = 15  # kW
 p_max_discharge = 15  # kW
 inverter_p_max = 15 # kW
