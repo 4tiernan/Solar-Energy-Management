@@ -60,7 +60,7 @@ load_power_states = plant.forecast_load_power(forecast_hours_from_now=forecast_h
 load_5min = [powerstate.state for powerstate in load_power_states]
 
 # Solar Forecast
-solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)*1.5
+solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)*2
 
 # -------------------------------
 # Fetch Amber 12-hour forecast
@@ -170,7 +170,6 @@ for t in range(int(N)):
     constraints += [
         grid_import[t] - grid_export[t] 
         == load_5min[t] 
-        - solar_5min[t] 
         - solar_to_ac
         + p_charge[t]
         - p_discharge[t]
@@ -220,8 +219,9 @@ plt.figure(figsize=(14,8))
 # --------- Top plot: battery & net load ----------
 plt.subplot(2,1,1)
 plt.plot(hours, battery_power, label='Battery Power (kW)', color='blue')
-plt.plot(hours, load_5min, label='Load', color='orange', alpha=0.6)
-plt.plot(hours, solar_5min, label='Solar', color='yellow', alpha=1)
+plt.plot(hours, load_5min, label='Load', color='orange', alpha=1)
+plt.plot(hours, solar_5min, label='Available Solar', color='limegreen', alpha=1, linestyle='--')
+plt.plot(hours, solar_used.value, label='Solar Used', color='limegreen')
 plt.plot(hours, grid_net, label='Grid Net Import (+ buy, - sell)', color='black', linestyle='--')
 plt.axhline(0, color='black', linewidth=0.5)
 plt.ylabel('Power (kW)')
