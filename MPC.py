@@ -9,6 +9,8 @@ from amber_api import AmberAPI  # your AmberAPI code
 from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 from ha_api import HomeAssistantAPI
 import PlantControl
+import matplotlib.dates as mdates
+
 
 amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
 
@@ -60,7 +62,7 @@ load_power_states = plant.forecast_load_power(forecast_hours_from_now=forecast_h
 load_5min = [powerstate.state for powerstate in load_power_states]
 
 # Solar Forecast
-solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)*2
+solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)*1
 
 # -------------------------------
 # Fetch Amber 12-hour forecast
@@ -205,6 +207,9 @@ battery_power = p_charge.value - p_discharge.value
 grid_net = grid_import.value - grid_export.value
 hours = np.arange(int(N)) * dt
 
+now = datetime.now().replace(second=0, microsecond=0)
+time_index = [now + timedelta(minutes=5 * i) for i in range(int(N))]
+
 grid_kwh_import_per_interval = grid_import.value / steps_per_hr 
 grid_kwh_export_per_interval = grid_export.value / steps_per_hr 
 
@@ -217,29 +222,33 @@ print(f"solar used: {round(solar_used.value[0],2)}  bat: {round(battery_power[0]
 
 plt.figure(figsize=(14,8))
 
+
 # --------- Top plot: battery & net load ----------
 plt.subplot(2,1,1)
-plt.plot(hours, battery_power, label='Battery Power (kW)', color='blue')
-plt.plot(hours, load_5min, label='Load', color='orange', alpha=1)
-plt.plot(hours, solar_5min, label='Available Solar', color='limegreen', alpha=1, linestyle='--')
-plt.plot(hours, solar_used.value, label='Solar Used', color='limegreen')
-plt.plot(hours, grid_net, label='Grid Net Import (+ buy, - sell)', color='black', linestyle='--')
+plt.plot(time_index, battery_power, label='Battery Power (kW)', color='blue')
+plt.plot(time_index, load_5min, label='Load', color='orange', alpha=1)
+plt.plot(time_index, solar_5min, label='Available Solar', color='limegreen', alpha=1, linestyle='--')
+plt.plot(time_index, solar_used.value, label='Solar Used', color='limegreen')
+plt.plot(time_index, inverter_power.value, label='Inverter Power (kW)', color='purple')
+plt.plot(time_index, grid_net, label='Grid Net Import (+ buy, - sell)', color='black', linestyle='--')
 plt.axhline(0, color='black', linewidth=0.5)
 plt.ylabel('Power (kW)')
 plt.title('Battery Schedule & Net Load with 24h Amber Forecast and Discharge Cost')
 plt.legend()
 plt.grid(True)
 
+
+
 # Secondary y-axis for prices
 plt.twinx()
-plt.plot(hours, prices_buy, label='Buy Price', color='green')
-plt.plot(hours, prices_sell, label='Sell Price', color='red')
+plt.plot(time_index, prices_buy, label='Buy Price', color='green')
+plt.plot(time_index, prices_sell, label='Sell Price', color='red')
 plt.ylabel('Price ($/kWh)')
 plt.legend(loc='upper right')
 
 # --------- Bottom plot: SOC ----------
 plt.subplot(2,1,2)
-plt.plot(hours.tolist() + [hours[-1]+dt], soc.value, label='Battery SOC (kWh)', color='purple')
+plt.plot(time_index, soc.value[0:-1], label='Battery SOC (kWh)', color='purple')
 plt.axhline(soc_min, color='red', linestyle='--', label='SOC Min/Max')
 plt.axhline(soc_max, color='red', linestyle='--')
 plt.xlabel('Hour of Day')
@@ -247,6 +256,11 @@ plt.ylabel('SOC (kWh)')
 plt.title('Battery State of Charge')
 plt.legend()
 plt.grid(True)
+
+for ax in plt.gcf().axes:
+    ax.xaxis.set_major_locator(mdates.HourLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax.tick_params(axis='x', rotation=0)
 
 plt.tight_layout()
 plt.show()
