@@ -39,7 +39,7 @@ N = N_5min  # 12 hours, 5-min timesteps
 dt = dt_5min/60      # 5 minutes in hours
 
 battery_capacity = 40.0  # kWh
-soc_min = 0.1 * battery_capacity
+soc_min = 0.05 * battery_capacity
 soc_max = 1 * battery_capacity
 soc_init = 0.99 * battery_capacity
 soc_init = plant.kwh_stored_available
@@ -48,7 +48,7 @@ p_max_discharge = 21  # kW
 inverter_p_max = 15 # kW
 solar_dc_charge_max = 21  # kW (DC limit from solar to battery)
 efficiency = 0.95
-battery_export_cost = 0.10  # $/kWh
+battery_discharge_cost = 0.01  # $/kWh
 grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
 
 # -------------------------------
@@ -126,12 +126,15 @@ prices_sell = feedin_prices[:N_5min]
 # -------------------------------
 # Variables
 # -------------------------------
-p_charge = cp.Variable(int(N), nonneg=True)
+# Battery
+p_charge_solar = cp.Variable(int(N), nonneg=True)
+p_charge_grid = cp.Variable(int(N), nonneg=True)
 p_discharge = cp.Variable(int(N), nonneg=True)
 soc = cp.Variable(int(N)+1)
 
+# Solar
 solar_used = cp.Variable(int(N), nonneg=True) # Solar used out of the forecast value (allows for curtailment)
-solar_to_batt = cp.Variable(N, nonneg=True)
+solar_to_ac = cp.Variable(N, nonneg=True)
 
 
 # Grid import/export split
@@ -143,40 +146,46 @@ grid_export = cp.Variable(int(N), nonneg=True)
 # Constraints
 # -------------------------------
 constraints = []
-constraints += [soc[0] == soc_init]
+constraints += [soc[0] == soc_init] # Set the inital soc 
 
 
 for t in range(int(N)):
     # SoC dynamics
-    constraints += [soc[t+1] == soc[t] + dt * efficiency * p_charge[t] - dt / efficiency * p_discharge[t]]
+    p_charge = p_charge_solar[t] + p_charge_grid[t]
+    constraints += [soc[t+1] == soc[t] + dt * efficiency * p_charge - dt / efficiency * p_discharge[t]]
 
      # SoC limits
     constraints += [soc[t+1] >= soc_min, soc[t+1] <= soc_max]
 
     # Battery Power limits
-    constraints += [p_charge[t] <= p_max_charge]
+    constraints += [p_charge <= p_max_charge]
     constraints += [p_discharge[t] <= p_max_discharge]
 
-    # DC Solar Constraints
+    # DC Solar Limits
     constraints += [
         solar_used[t] <= solar_5min[t],         # cannot exceed forecast
         solar_used[t] <= solar_dc_charge_max,   # DC limit
-        solar_to_batt[t] <= solar_used[t],       # DC Battery solar charging must not be greater than solar used
-        solar_to_batt[t] <= p_charge[t]
+        p_charge_solar[t] <= solar_used[t],       # DC Battery solar charging must not be greater than solar used
     ]
 
+    # DC Balance
+    grid_net = grid_import[t] - grid_export[t]
+    constraints += [solar_used[t] == p_charge_solar[t] + solar_to_ac[t]]
+
+    # Solar to AC
+    constraints += [solar_to_ac[t] == grid_export[t] + load_5min[t] - p_discharge[t]]
+
     # AC Power Balance
-    solar_to_ac = solar_used[t] - solar_to_batt[t]
     constraints += [
-        grid_import[t] - grid_export[t] 
+        grid_net
         == load_5min[t] 
-        - solar_to_ac
-        + p_charge[t]
+        - solar_to_ac[t]
+        + p_charge_grid[t]
         - p_discharge[t]
     ]
 
     # Inverter AC Limit
-    constraints += [solar_to_ac + p_discharge[t] + p_charge[t] <= inverter_p_max]
+    constraints += [solar_to_ac + p_discharge[t] + p_charge_grid[t] <= inverter_p_max]
 
 # -------------------------------
 # Objective: Minimise cost including battery discharge cost
@@ -184,6 +193,7 @@ for t in range(int(N)):
 objective = cp.Minimize(
     cp.sum(cp.multiply(grid_import, prices_buy) * dt
            - cp.multiply(grid_export, prices_sell) * dt
+           + battery_discharge_cost * p_discharge * dt
            + grid_import * grid_import_penalty_cost * dt)
 )
 
@@ -201,7 +211,8 @@ if prob.status not in ("optimal", "optimal_inaccurate"):
 # -------------------------------
 # Results
 # -------------------------------
-battery_power = p_charge.value - p_discharge.value
+p_charge = p_charge_solar.value + p_charge_grid.value
+battery_power = p_charge - p_discharge.value
 grid_net = grid_import.value - grid_export.value
 hours = np.arange(int(N)) * dt
 
@@ -213,6 +224,7 @@ revenue_export = np.sum(grid_kwh_export_per_interval * prices_sell)  # $ earned 
 grid_profit = revenue_export - cost_import
 print(f"Profit: ${round(grid_profit, 2)}")
 #print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
+print(f"solar used: {round(solar_used.value[0],2)}  bat: {round(battery_power[0],2)}  load: {round(load_5min[0],2)} grid: {round(grid_net[0],2)}  p_charge_solar: {round(p_charge_solar.value[0],2)} p_charge_grid: {round(p_charge_grid.value[0] ,2)} solar_to_ac: {round(solar_to_ac.value[0],2)}  p_discharge: {round(p_discharge.value[0], 2)}")
 
 plt.figure(figsize=(14,8))
 
