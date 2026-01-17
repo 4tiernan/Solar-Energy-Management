@@ -111,7 +111,7 @@ def update_sensors(amber_data):
     grid_export_power = round(ha.get_numeric_state("sensor.sigen_plant_grid_export_power"), 2)
     profit = ha.get_numeric_state("sensor.daily_feed_in")
     cost = ha.get_numeric_state("sensor.daily_general_usage")
-    ha_mqtt.system_state_sensor.set_state(EC.working_mode + f" {grid_export_power}@{amber_data.feedIn_price} c/kWh ${round(profit-cost,2)} profit")
+    ha_mqtt.system_state_sensor.set_state(EC.working_mode + f" {round(grid_export_power,1)}@{amber_data.feedIn_price} c/kWh ${round(profit-cost,2)} profit")
     ha_mqtt.base_load_sensor.set_state(1000*plant.get_base_load_estimate()) # converted to w from kW
     ha_mqtt.effective_price_sensor.set_state(determine_effective_price(amber_data)) 
     ha_mqtt.avg_daily_load_sensor.set_state(round(plant.avg_daily_load,2))
