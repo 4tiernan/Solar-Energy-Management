@@ -34,7 +34,8 @@ steps_per_hr = 60 // dt_5min
 
 N_30min = forecast_hrs * (60//dt_30min)
 N_5min = forecast_hrs * (60//dt_5min)
-amber_30min_intervals = (60//30)*12
+amber_forecast_30min_intervals = (60//30)*12    # Get the max 12hr forecast
+amber_past_30min_intervals = N_30min - amber_forecast_30min_intervals  # Fill the rest of the sim with past prices
 amber_5min_intervals = (60//5)*12
 
 N = N_5min  # 12 hours, 5-min timesteps
@@ -50,7 +51,7 @@ p_max_discharge = 21  # kW
 inverter_p_max = 15 # kW
 solar_dc_charge_max = 21  # kW (DC limit from solar to battery)
 efficiency = 0.95
-battery_discharge_cost = 0.01  # $/kWh
+battery_min_export_cost = 0.08  # $/kWh
 grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
 
 # -------------------------------
@@ -62,7 +63,7 @@ load_power_states = plant.forecast_load_power(forecast_hours_from_now=forecast_h
 load_5min = [powerstate.state for powerstate in load_power_states]
 
 # Solar Forecast
-solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)*1
+solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)
 
 # -------------------------------
 # Fetch Amber 12-hour forecast
@@ -75,7 +76,7 @@ def expand_prices(prices_30m, steps_per_price):
     return np.repeat(prices_30m, steps_per_price)
 
 # Get the past prices to form the 2nd half of the 24hr forecast due to the 12hr limit on forecasts
-[past_general_5_min, past_feed_in_5_min] = amber.get_past_prices(amber_30min_intervals, resolution=30)
+[past_general_5_min, past_feed_in_5_min] = amber.get_past_prices(amber_past_30min_intervals, resolution=30)
 #past_feed_in_5_min = list(reversed(past_feed_in_5_min))
 #past_general_5_min = list(reversed(past_general_5_min))
 past_general_prices_5_min = [round(pf.price) for pf in past_general_5_min] # Extract the price and round it from the forecasts
@@ -94,11 +95,11 @@ feed_in_price_forecast_5_min = [round(feedIn.price) for feedIn in feed_in_price_
 general_price_forecast_5_min = [round(general.price) for general in general_price_forecast_5_min][0:11]
 
 # Get the 30 minutely forecast
-[general_price_forecast, feed_in_price_forecast] = amber.get_forecast(next_intervals=amber_30min_intervals, resolution=30, advanced_forecast=False)
+[general_price_forecast, feed_in_price_forecast] = amber.get_forecast(next_intervals=amber_forecast_30min_intervals, resolution=30, advanced_forecast=False)
 
 #Check amber returned the requested number of forecasts
-if(len(feed_in_price_forecast) < amber_30min_intervals):
-    print(f"Amber only returned {len(feed_in_price_forecast)} forecast intervals when {amber_30min_intervals} intervals were requested")
+if(len(feed_in_price_forecast) < amber_forecast_30min_intervals):
+    print(f"Amber only returned {len(feed_in_price_forecast)} forecast intervals when {amber_forecast_30min_intervals} intervals were requested")
     raise("Amber didn't return enough forecast intervals")
 
 general_price_forecast = [round(pf.price) for pf in general_price_forecast]
@@ -148,7 +149,7 @@ inverter_power = cp.Variable(int(N), nonneg=False) # Discharge to grid is positi
 # -------------------------------
 constraints = []
 constraints += [soc[0] == soc_init] # Set the inital soc 
-
+constraints += [soc[-1] == soc_init] # Set the final soc 
 
 for t in range(int(N)):
     # SoC dynamics
@@ -160,6 +161,10 @@ for t in range(int(N)):
     # Battery Power limits
     constraints += [p_charge <= p_max_charge]
     constraints += [p_discharge[t] <= p_max_discharge]
+
+    # Limit battery discharge export based on price
+    if(prices_sell[t] < battery_min_export_cost):
+        constraints += [(p_discharge[t] <= max(0, load_5min[t] - solar_5min[t]))]
 
     # DC Solar Limits
     constraints += [
@@ -185,10 +190,9 @@ for t in range(int(N)):
 objective = cp.Minimize(
     cp.sum(cp.multiply(grid_import, prices_buy) * dt
            - cp.multiply(grid_export, prices_sell) * dt
-           + battery_discharge_cost * p_discharge * dt
-           + grid_import * grid_import_penalty_cost * dt)
-)
+           + cp.multiply(grid_import, grid_import_penalty_cost) * dt))
 
+# + battery_discharge_cost * p_discharge * dt
 # + battery_export_cost * (grid_export - solar_5min) * dt
 
 # -------------------------------

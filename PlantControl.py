@@ -243,8 +243,8 @@ class Plant:
     def round_forecast_times(self, forecast_hours_from_now=None, forecast_till_time=None):
         rounded_current_time = self.round_minutes(datetime.datetime.now(), nearest_minute=5)
         if(forecast_hours_from_now):
-            if(forecast_hours_from_now >= 48):
-                raise Exception(f"Unable to provide forecast more than 48hrs in the future. {forecast_hours_from_now} hrs requested")
+            if(forecast_hours_from_now > 24):
+                raise Exception(f"Unable to provide forecast more than 24hrs in the future. {forecast_hours_from_now} hrs requested")
             rounded_forecast_time = self.round_minutes(rounded_current_time + datetime.timedelta(hours=forecast_hours_from_now), nearest_minute=5).time()
         elif(forecast_till_time):
             rounded_forecast_time = self.round_minutes(forecast_till_time, nearest_minute=5)
