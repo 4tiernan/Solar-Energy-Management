@@ -29,7 +29,8 @@ class EnergyController():
         if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
             self.self_consumption()
                 
-    def dispatch(self):
+    def dispatch(self, kw_export_power):
+        kw_export_power = max(0, min(self.plant.max_export_power, kw_export_power)) # Constrain export power to within limits
         self.working_mode = "Dispatching"
         self.plant.check_control_limits(
             working_mode=self.working_mode,
@@ -37,7 +38,7 @@ class EnergyController():
             discharge=self.plant.max_discharge_power,
             charge=0,
             pv=self.plant.max_pv_power,
-            grid_export=self.plant.max_export_power,
+            grid_export=kw_export_power,
             grid_import=0)
         
     def export_all_solar(self):

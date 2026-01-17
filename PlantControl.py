@@ -183,8 +183,16 @@ class Plant:
         for day in history_days:
             day_states = [d.state for d in day]
             min_state = min(day_states[0:int(len(day_states)/2)]) # Minimum state for first half of day (avoids getting next days minimum)
+            max_state = min(day_states[int(len(day_states)/2):-1]) # Maximum state for second half of day (avoids getting next days minimum)
+
             while(day[0].state > min_state): # remove any states that were from the previous day, ie ensure we start with 0 for the day
                 day.pop(0)
+                #print("Popping Start of Day Data")
+            
+            while(day[-1].state < max_state): # remove any states that were from the previous day, ie ensure we start with 0 for the day
+                day.pop(-1)
+                #print("Popping End of Day Data")
+
 
 
         avg_day = []
@@ -196,7 +204,7 @@ class Plant:
         for i in range(int((24*60)/time_bucket_size)):
             avg_day.append(StateClass(state=None, states=[], time=dt.time()))
             dt = dt + datetime.timedelta(minutes=time_bucket_size)
-        
+            
         
         for day in history_days:
             i = 0
@@ -215,10 +223,13 @@ class Plant:
                     if(i < len(avg_day)-1):
                         if(state.time.time() == avg_day[i+1].time):
                             if(len(bin_avg) > 0):
-                                avg_day[i].states.append(sum(bin_avg) / len(bin_avg))
+                                avg_day[i].states.append(sum(bin_avg) / len(bin_avg)) # Append the average for this day's time bin
                             else:
-                                avg_day[i].states.append(0) # Make the state 0 if we have no data for it 
+                                avg_day[i].states.append(None) # Make the state 0 if we have no data for it 
                             bin_avg = []
+                            i = i + 1
+                        else: # If the time we are after isn't in the next bin then there musn't be data there
+                            avg_day[i].states.append(None) # Make the state 0 if we have no data for it 
                             i = i + 1
 
                 # If the state's rounded time matches the current array time bin, add it to the array
@@ -227,12 +238,51 @@ class Plant:
                         bin_avg.append(state.state)
 
             if(len(bin_avg) > 0):                    
-                avg_day[i].states.append(sum(bin_avg) / len(bin_avg))   # calc avg for last period of day 
+                avg_day[i].states.append(sum(bin_avg) / len(bin_avg))   # calc avg for last period of day         
 
+        #for interval in avg_day:
+        #    print(interval.states)
+        
+        for index, interval in enumerate(avg_day):
+            for state_index, state in enumerate(avg_day[index].states): # Check all days states for that time have data
+                if(state == None): # If there's no data for that day's state, take the avg of the last and next states for that day
+                    last_state = None
+                    next_state = None
+                    lower_idx = index - 1
+                    while(last_state == None and lower_idx > 1): # Find the last two valid states for that day (2 states increases likelyhood they are vaild)
+                        if(avg_day[lower_idx].states[state_index] != None and avg_day[lower_idx-1].states[state_index] != None):
+                            lower_idx = lower_idx - 1 # reduce the index to get the 2nd valid state
+                            last_state = avg_day[lower_idx].states[state_index]
+                        else:
+                            lower_idx = lower_idx - 1
+
+                    upper_idx = index + 1
+                    while(next_state == None and upper_idx < len(avg_day)-2): # Find the next valid two states for that day
+                        if(avg_day[upper_idx].states[state_index] != None and avg_day[upper_idx+1].states[state_index] != None):
+                            upper_idx = upper_idx + 1
+                            next_state = avg_day[upper_idx].states[state_index]
+                        else:
+                            upper_idx = upper_idx + 1
+                    
+                    #print(f"next: {next_state} last: {last_state} idx: {index}")
+                    if(next_state != None and last_state != None): # If both states are present, linearly interpolate between them
+                        n = upper_idx - lower_idx # Determine the linear interpolated values to fill the missing data
+                        for i in range(lower_idx, upper_idx + 1):
+                            avg_day[i].states[state_index] = last_state + (next_state - last_state) * ((i - lower_idx) / n)
+                            #print(last_state + ((next_state - last_state) * (i - lower_idx)) / n)
+                    elif(last_state != None):
+                        avg_day[index].states[state_index] = avg_day[index-1].states[state_index] # Use just the last state if the next state isn't available
+                    elif(next_state != None):
+                        avg_day[index].states[state_index] = avg_day[index+1].states[state_index] # Use just the next state if the last state isn't available
+
+            interval = avg_day[index] # Update the interval var with the latest data after cleaning
+        
         for interval in avg_day:
             if(len(interval.states) == 0):
-                raise Exception(f"Failed to get state data for {state.time} time period")
+                raise Exception(f"Failed to get state data for {interval.time} time period")
             interval.state = round(sum(interval.states) / len(interval.states), 2)
+
+            #print(f"avg: {interval.state} states: {interval.states}")
 
         #for i in range(len(avg_day)): # Print average for each day and each time
         #    print(avg_day[i].state)

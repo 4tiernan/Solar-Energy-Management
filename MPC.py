@@ -42,9 +42,9 @@ N = N_5min  # 12 hours, 5-min timesteps
 dt = dt_5min/60      # 5 minutes in hours
 
 battery_capacity = 40.0  # kWh
-soc_min = 0.05 * battery_capacity
+soc_min = 0.0 * battery_capacity
 soc_max = 1 * battery_capacity
-soc_init = 0.99 * battery_capacity
+#soc_init = 0.99 * battery_capacity
 soc_init = plant.kwh_stored_available
 p_max_charge = 21  # kW
 p_max_discharge = 21  # kW
@@ -53,6 +53,9 @@ solar_dc_charge_max = 21  # kW (DC limit from solar to battery)
 efficiency = 0.95
 battery_min_export_cost = 0.08  # $/kWh
 grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
+
+battery_low_energy_threshold = 5 # kWh
+battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
 
 # -------------------------------
 # Forecasts
@@ -133,6 +136,9 @@ prices_sell = feedin_prices[:N_5min]
 p_charge = cp.Variable(int(N), nonneg=True)
 p_discharge = cp.Variable(int(N), nonneg=True)
 soc = cp.Variable(int(N)+1)
+low_energy_violation = cp.Variable(int(N), nonneg=True)
+export_penalty = cp.Variable(int(N), nonneg=True) # Penalty for exporting at low prices
+
 
 # Solar
 solar_used = cp.Variable(int(N), nonneg=True) # Solar used out of the forecast value (allows for curtailment)
@@ -151,12 +157,18 @@ constraints = []
 constraints += [soc[0] == soc_init] # Set the inital soc 
 constraints += [soc[-1] == soc_init] # Set the final soc 
 
+
+#prices_sell[180:210] = -0.7 # Allow testing of various pricings
+#prices_buy[180:210] = -0.5
+
 for t in range(int(N)):
     # SoC dynamics
     constraints += [soc[t+1] == soc[t] + dt * efficiency * p_charge[t] - dt / efficiency * p_discharge[t]]
 
      # SoC limits
     constraints += [soc[t+1] >= soc_min, soc[t+1] <= soc_max]
+    # Soft reserve activation
+    constraints += [soc[t+1] + low_energy_violation[t] >= battery_low_energy_threshold]
 
     # Battery Power limits
     constraints += [p_charge <= p_max_charge]
@@ -183,6 +195,7 @@ for t in range(int(N)):
         inverter_power[t] <= inverter_p_max,
         inverter_power[t] >= -inverter_p_max
         ]
+    
 
 # -------------------------------
 # Objective: Minimise cost including battery discharge cost
@@ -190,7 +203,9 @@ for t in range(int(N)):
 objective = cp.Minimize(
     cp.sum(cp.multiply(grid_import, prices_buy) * dt
            - cp.multiply(grid_export, prices_sell) * dt
-           + cp.multiply(grid_import, grid_import_penalty_cost) * dt))
+           + cp.multiply(grid_import, grid_import_penalty_cost) * dt
+           + battery_low_energy_penalty_cost * low_energy_violation * dt
+           ))
 
 # + battery_discharge_cost * p_discharge * dt
 # + battery_export_cost * (grid_export - solar_5min) * dt
@@ -255,6 +270,8 @@ plt.subplot(2,1,2)
 plt.plot(time_index, soc.value[0:-1], label='Battery SOC (kWh)', color='purple')
 plt.axhline(soc_min, color='red', linestyle='--', label='SOC Min/Max')
 plt.axhline(soc_max, color='red', linestyle='--')
+plt.axhline(battery_low_energy_threshold, color='orange', linestyle='--', label='Low Energy Threshold')
+
 plt.xlabel('Hour of Day')
 plt.ylabel('SOC (kWh)')
 plt.title('Battery State of Charge')
