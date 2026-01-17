@@ -127,20 +127,19 @@ prices_sell = feedin_prices[:N_5min]
 # Variables
 # -------------------------------
 # Battery
-p_charge_solar = cp.Variable(int(N), nonneg=True)
-p_charge_grid = cp.Variable(int(N), nonneg=True)
+p_charge = cp.Variable(int(N), nonneg=True)
 p_discharge = cp.Variable(int(N), nonneg=True)
 soc = cp.Variable(int(N)+1)
 
 # Solar
 solar_used = cp.Variable(int(N), nonneg=True) # Solar used out of the forecast value (allows for curtailment)
-solar_to_ac = cp.Variable(N, nonneg=True)
-
 
 # Grid import/export split
 grid_import = cp.Variable(int(N), nonneg=True)
 grid_export = cp.Variable(int(N), nonneg=True)
 
+# Inverter
+inverter_power = cp.Variable(int(N), nonneg=False) # Discharge to grid is positive
 
 # -------------------------------
 # Constraints
@@ -151,8 +150,7 @@ constraints += [soc[0] == soc_init] # Set the inital soc
 
 for t in range(int(N)):
     # SoC dynamics
-    p_charge = p_charge_solar[t] + p_charge_grid[t]
-    constraints += [soc[t+1] == soc[t] + dt * efficiency * p_charge - dt / efficiency * p_discharge[t]]
+    constraints += [soc[t+1] == soc[t] + dt * efficiency * p_charge[t] - dt / efficiency * p_discharge[t]]
 
      # SoC limits
     constraints += [soc[t+1] >= soc_min, soc[t+1] <= soc_max]
@@ -165,27 +163,19 @@ for t in range(int(N)):
     constraints += [
         solar_used[t] <= solar_5min[t],         # cannot exceed forecast
         solar_used[t] <= solar_dc_charge_max,   # DC limit
-        p_charge_solar[t] <= solar_used[t],       # DC Battery solar charging must not be greater than solar used
     ]
 
-    # DC Balance
-    grid_net = grid_import[t] - grid_export[t]
-    constraints += [solar_used[t] == p_charge_solar[t] + solar_to_ac[t]]
+    # DC Balance, Sum Inputs == Sum Outputs to DC bus
+    constraints += [solar_used[t] + p_discharge[t] == p_charge[t] + inverter_power[t]]
 
-    # Solar to AC
-    constraints += [solar_to_ac[t] == grid_export[t] + load_5min[t] - p_discharge[t]]
-
-    # AC Power Balance
-    constraints += [
-        grid_net
-        == load_5min[t] 
-        - solar_to_ac[t]
-        + p_charge_grid[t]
-        - p_discharge[t]
-    ]
+    # AC Power Balance, Sum AC Sources == Sum AC Sinks
+    constraints += [grid_import[t] + inverter_power[t] == load_5min[t] + grid_export[t]]
 
     # Inverter AC Limit
-    constraints += [solar_to_ac + p_discharge[t] + p_charge_grid[t] <= inverter_p_max]
+    constraints += [
+        inverter_power[t] <= inverter_p_max,
+        inverter_power[t] >= -inverter_p_max
+        ]
 
 # -------------------------------
 # Objective: Minimise cost including battery discharge cost
@@ -211,8 +201,7 @@ if prob.status not in ("optimal", "optimal_inaccurate"):
 # -------------------------------
 # Results
 # -------------------------------
-p_charge = p_charge_solar.value + p_charge_grid.value
-battery_power = p_charge - p_discharge.value
+battery_power = p_charge.value - p_discharge.value
 grid_net = grid_import.value - grid_export.value
 hours = np.arange(int(N)) * dt
 
@@ -224,7 +213,7 @@ revenue_export = np.sum(grid_kwh_export_per_interval * prices_sell)  # $ earned 
 grid_profit = revenue_export - cost_import
 print(f"Profit: ${round(grid_profit, 2)}")
 #print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
-print(f"solar used: {round(solar_used.value[0],2)}  bat: {round(battery_power[0],2)}  load: {round(load_5min[0],2)} grid: {round(grid_net[0],2)}  p_charge_solar: {round(p_charge_solar.value[0],2)} p_charge_grid: {round(p_charge_grid.value[0] ,2)} solar_to_ac: {round(solar_to_ac.value[0],2)}  p_discharge: {round(p_discharge.value[0], 2)}")
+print(f"solar used: {round(solar_used.value[0],2)}  bat: {round(battery_power[0],2)}  load: {round(load_5min[0],2)} grid: {round(grid_net[0],2)}  p_charge: {round(p_charge.value[0],2)}  p_discharge: {round(p_discharge.value[0], 2)} inverter_power: {round(inverter_power.value[0], 2)}")
 
 plt.figure(figsize=(14,8))
 
