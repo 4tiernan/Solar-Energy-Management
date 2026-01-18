@@ -5,236 +5,242 @@ import cvxpy as cp
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import pytz
-from amber_api import AmberAPI  # your AmberAPI code
-from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
-from ha_api import HomeAssistantAPI
-import PlantControl
 import matplotlib.dates as mdates
 
 
-amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
+class MPC:
+    def __init__(self, amber, plant, ha):
+        self.amber = amber
+        self.plant = plant
+        self.ha = ha
 
-plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
+        self.update_limits()    # Update limits that are fixed (some are required for config)
 
-ha = HomeAssistantAPI(
-        base_url=HA_URL,
-        token=HA_TOKEN,
-        errors=True
-    )
+        # -------------------------------
+        # Config
+        # -------------------------------
 
-# -------------------------------
-# Config
-# -------------------------------
+        self.forecast_hrs = 24
+        self.dt_30min = 30   # minutes
+        self.dt_5min   = 5    # minutes
+        self.steps_per_price = self.dt_30min // self.dt_5min  # = 6
+        self.steps_per_hr = 60 // self.dt_5min
 
-forecast_hrs = 24
-dt_30min = 30   # minutes
-dt_5min   = 5    # minutes
-steps_per_price = dt_30min // dt_5min  # = 6
-steps_per_hr = 60 // dt_5min
+        self.N_30min = self.forecast_hrs * (60 // self.dt_30min) # forecast hours, 5-min timesteps
+        self.N_5min = self.forecast_hrs * (60 // self.dt_5min)
+        self.amber_forecast_30min_intervals = (60//30)*12    # Get the max 12hr forecast
+        self.amber_past_30min_intervals = self.N_30min - self.amber_forecast_30min_intervals  # Fill the rest of the sim with past prices
+        self.amber_5min_intervals = (60//5)*12
 
-N_30min = forecast_hrs * (60//dt_30min)
-N_5min = forecast_hrs * (60//dt_5min)
-amber_forecast_30min_intervals = (60//30)*12    # Get the max 12hr forecast
-amber_past_30min_intervals = N_30min - amber_forecast_30min_intervals  # Fill the rest of the sim with past prices
-amber_5min_intervals = (60//5)*12
+        self.dt_5min = self.dt_5min/60      # 5 minutes in hours
 
-N = N_5min  # 12 hours, 5-min timesteps
-dt = dt_5min/60      # 5 minutes in hours
+        # Battery Settings
+        self.soc_min = 0.0 * self.battery_capacity
+        self.soc_max = 1.0 * self.battery_capacity
+        self.discharge_efficiency = 0.95
+        self.battery_min_export_cost = 0.08  # $/kWh
+        self.grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
+        self.battery_low_energy_threshold = 5 # kWh
+        self.battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
 
-battery_capacity = 40.0  # kWh
-soc_min = 0.0 * battery_capacity
-soc_max = 1 * battery_capacity
-#soc_init = 0.99 * battery_capacity
-soc_init = plant.kwh_stored_available
-p_max_charge = 21  # kW
-p_max_discharge = 21  # kW
-inverter_p_max = 15 # kW
-solar_dc_charge_max = 21  # kW (DC limit from solar to battery)
-efficiency = 0.95
-battery_min_export_cost = 0.08  # $/kWh
-grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
+        
+        
+    def update_limits(self):
+        self.battery_capacity = self.plant.rated_capacity  # kWh
+        self.solar_dc_max = self.plant.max_pv_power             # kW (DC limit for MPPTs)
+        self.p_max_charge = self.plant.max_charge_power         # kW (Battery max charge rate)
+        self.p_max_discharge = self.plant.max_discharge_power   # kW (Battery max discharge rate)
+        self.inverter_p_max = self.plant.max_inverter_power     # kW (Inverter power limit)
+        self.grid_import_limit = self.plant.max_import_power    # kW (Grid import limit)
+        self.grid_export_limit = self.plant.max_export_power    # kW (Grid export limit)      
 
-battery_low_energy_threshold = 5 # kWh
-battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
+    # Update any values or forecasts required to run the sim
+    def update_values(self):        
+        self.soc_init = self.plant.kwh_stored_available
 
-# -------------------------------
-# Forecasts
-# -------------------------------
+        # ---------- Forecasts ----------
+        # Load Forecast
+        load_power_states = self.plant.forecast_load_power(forecast_hours_from_now=self.forecast_hrs) # Calculate the average load power
+        self.load_5min = [powerstate.state for powerstate in load_power_states]
 
-# Load Forecast
-load_power_states = plant.forecast_load_power(forecast_hours_from_now=forecast_hrs) # Calculate the average load power
-load_5min = [powerstate.state for powerstate in load_power_states]
+        # Solar Forecast
+        self.solar_5min = self.plant.forecast_solar_power(forecast_hours_from_now=self.forecast_hrs)
 
-# Solar Forecast
-solar_5min = plant.forecast_solar_power(forecast_hours_from_now=forecast_hrs)
+        # -------------------------------
+        # Fetch Amber 12-hour forecast
+        # -------------------------------
+        # Get Amber data
+        #data = amber.get_data(partial_update=False)
 
-# -------------------------------
-# Fetch Amber 12-hour forecast
-# -------------------------------
-# Get Amber data
-#data = amber.get_data(partial_update=False)
+        # Expand the 30 minutely price out to 5 minutely 
+        def expand_prices(prices_30m, steps_per_price):
+            return np.repeat(prices_30m, steps_per_price)
 
-# Expand the 30 minutely price out to 5 minutely 
-def expand_prices(prices_30m, steps_per_price):
-    return np.repeat(prices_30m, steps_per_price)
+        # Get the past prices to form the 2nd half of the 24hr forecast due to the 12hr limit on forecasts
+        [past_general_5_min, past_feed_in_5_min] = self.amber.get_past_prices(self.amber_past_30min_intervals, resolution=30)
+        #past_feed_in_5_min = list(reversed(past_feed_in_5_min))
+        #past_general_5_min = list(reversed(past_general_5_min))
+        past_general_prices_5_min = [round(pf.price) for pf in past_general_5_min] # Extract the price and round it from the forecasts
+        past_feed_in_prices_5_min = [round(pf.price) for pf in past_feed_in_5_min]
 
-# Get the past prices to form the 2nd half of the 24hr forecast due to the 12hr limit on forecasts
-[past_general_5_min, past_feed_in_5_min] = amber.get_past_prices(amber_past_30min_intervals, resolution=30)
-#past_feed_in_5_min = list(reversed(past_feed_in_5_min))
-#past_general_5_min = list(reversed(past_general_5_min))
-past_general_prices_5_min = [round(pf.price) for pf in past_general_5_min] # Extract the price and round it from the forecasts
-past_feed_in_prices_5_min = [round(pf.price) for pf in past_feed_in_5_min]
+        past_general_prices_5_min = expand_prices(past_general_prices_5_min,  self.steps_per_price) # Expand the prices out to 5 minutely
+        past_feed_in_prices_5_min = expand_prices(past_feed_in_prices_5_min,  self.steps_per_price)
 
-past_general_prices_5_min = expand_prices(past_general_prices_5_min,  steps_per_price) # Expand the prices out to 5 minutely
-past_feed_in_prices_5_min = expand_prices(past_feed_in_prices_5_min,  steps_per_price)
+        # Print previous Prices
+        #for d in past_feed_in_5_min:4
+        #    print(f"Time: {d.start_time}  Price: {d.price}")
 
-# Print previous Prices
-#for d in past_feed_in_5_min:4
-#    print(f"Time: {d.start_time}  Price: {d.price}")
+        # Get the 5 minutely price forecasts
+        [general_price_forecast_5_min, feed_in_price_forecast_5_min] = self.amber.get_forecast(next_intervals=60//5, resolution=5, advanced_forecast=False)
+        feed_in_price_forecast_5_min = [round(feedIn.price) for feedIn in feed_in_price_forecast_5_min][0:11] # select only the first 12 forecast intervals
+        general_price_forecast_5_min = [round(general.price) for general in general_price_forecast_5_min][0:11]
 
-# Get the 5 minutely price forecasts
-[general_price_forecast_5_min, feed_in_price_forecast_5_min] = amber.get_forecast(next_intervals=60//5, resolution=5, advanced_forecast=False)
-feed_in_price_forecast_5_min = [round(feedIn.price) for feedIn in feed_in_price_forecast_5_min][0:11] # select only the first 12 forecast intervals
-general_price_forecast_5_min = [round(general.price) for general in general_price_forecast_5_min][0:11]
+        # Get the 30 minutely forecast
+        [general_price_forecast, feed_in_price_forecast] = self.amber.get_forecast(next_intervals=self.amber_forecast_30min_intervals, resolution=30, advanced_forecast=False)
 
-# Get the 30 minutely forecast
-[general_price_forecast, feed_in_price_forecast] = amber.get_forecast(next_intervals=amber_forecast_30min_intervals, resolution=30, advanced_forecast=False)
+        #Check amber returned the requested number of forecasts
+        if(len(feed_in_price_forecast) < self.amber_forecast_30min_intervals):
+            print(f"Amber only returned {len(feed_in_price_forecast)} forecast intervals when {self.amber_forecast_30min_intervals} intervals were requested")
+            raise("Amber didn't return enough forecast intervals")
 
-#Check amber returned the requested number of forecasts
-if(len(feed_in_price_forecast) < amber_forecast_30min_intervals):
-    print(f"Amber only returned {len(feed_in_price_forecast)} forecast intervals when {amber_forecast_30min_intervals} intervals were requested")
-    raise("Amber didn't return enough forecast intervals")
-
-general_price_forecast = [round(pf.price) for pf in general_price_forecast]
-feed_in_price_forecast = [round(pf.price) for pf in feed_in_price_forecast]
-
-
-general_price_forecast = expand_prices(general_price_forecast,  steps_per_price)
-feed_in_price_forecast = expand_prices(feed_in_price_forecast, steps_per_price)
-
-#print(f"Forecast amber prices {feed_in_price_forecast} len {len(feed_in_price_forecast)}")
+        general_price_forecast = [round(pf.price) for pf in general_price_forecast]
+        feed_in_price_forecast = [round(pf.price) for pf in feed_in_price_forecast]
 
 
-general_price_forecast = np.append(general_price_forecast, past_general_prices_5_min) # append the past prices to the 12hr forecast to allow for a 24hr prediction
-feed_in_price_forecast = np.append(feed_in_price_forecast, past_feed_in_prices_5_min)
+        general_price_forecast = expand_prices(general_price_forecast,  self.steps_per_price)
+        feed_in_price_forecast = expand_prices(feed_in_price_forecast, self.steps_per_price)
 
-feed_in_price_forecast[0:len(feed_in_price_forecast_5_min)] = feed_in_price_forecast_5_min
-general_price_forecast[0:len(general_price_forecast_5_min)] = general_price_forecast_5_min
-
-# Extract forecast prices
-general_prices = np.array(general_price_forecast) / 100      # buy price in $ from cents
-feedin_prices  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
-
-# Assign to optimization variables
-prices_buy  = general_prices[:N_5min]
-prices_sell = feedin_prices[:N_5min]
-
-# -------------------------------
-# Variables
-# -------------------------------
-# Battery
-p_charge = cp.Variable(int(N), nonneg=True)
-p_discharge = cp.Variable(int(N), nonneg=True)
-soc = cp.Variable(int(N)+1)
-low_energy_violation = cp.Variable(int(N), nonneg=True)
-export_penalty = cp.Variable(int(N), nonneg=True) # Penalty for exporting at low prices
+        #print(f"Forecast amber prices {feed_in_price_forecast} len {len(feed_in_price_forecast)}")
 
 
-# Solar
-solar_used = cp.Variable(int(N), nonneg=True) # Solar used out of the forecast value (allows for curtailment)
+        general_price_forecast = np.append(general_price_forecast, past_general_prices_5_min) # append the past prices to the 12hr forecast to allow for a 24hr prediction
+        feed_in_price_forecast = np.append(feed_in_price_forecast, past_feed_in_prices_5_min)
 
-# Grid import/export split
-grid_import = cp.Variable(int(N), nonneg=True)
-grid_export = cp.Variable(int(N), nonneg=True)
+        feed_in_price_forecast[0:len(feed_in_price_forecast_5_min)] = feed_in_price_forecast_5_min
+        general_price_forecast[0:len(general_price_forecast_5_min)] = general_price_forecast_5_min
 
-# Inverter
-inverter_power = cp.Variable(int(N), nonneg=False) # Discharge to grid is positive
+        # Extract forecast prices
+        general_prices = np.array(general_price_forecast) / 100      # buy price in $ from cents
+        feedin_prices  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
 
-# -------------------------------
-# Constraints
-# -------------------------------
-constraints = []
-constraints += [soc[0] == soc_init] # Set the inital soc 
-constraints += [soc[-1] == soc_init] # Set the final soc 
+        # Assign to optimization variables
+        self.prices_buy  = general_prices[:self.N_5min]
+        self.prices_sell = feedin_prices[:self.N_5min]
 
+    def run_optimisation(self):
+        self.update_values()
+        # ----------- Variables -----------
+        # Battery
+        p_charge = cp.Variable(int(self.N_5min), nonneg=True)
+        p_discharge = cp.Variable(int(self.N_5min), nonneg=True)
+        soc = cp.Variable(int(self.N_5min)+1)
+        low_energy_violation = cp.Variable(int(self.N_5min), nonneg=True)
+        export_penalty = cp.Variable(int(self.N_5min), nonneg=True) # Penalty for exporting at low prices
 
-#prices_sell[180:210] = -0.7 # Allow testing of various pricings
-#prices_buy[180:210] = -0.5
+        # Solar
+        solar_used = cp.Variable(int(self.N_5min), nonneg=True) # Solar used out of the forecast value (allows for curtailment)
 
-for t in range(int(N)):
-    # SoC dynamics
-    constraints += [soc[t+1] == soc[t] + dt * efficiency * p_charge[t] - dt / efficiency * p_discharge[t]]
+        # Grid import/export
+        grid_import = cp.Variable(int(self.N_5min), nonneg=True)
+        grid_export = cp.Variable(int(self.N_5min), nonneg=True)
 
-     # SoC limits
-    constraints += [soc[t+1] >= soc_min, soc[t+1] <= soc_max]
-    # Soft reserve activation
-    constraints += [soc[t+1] + low_energy_violation[t] >= battery_low_energy_threshold]
+        # Inverter
+        inverter_power = cp.Variable(int(self.N_5min), nonneg=False) # Discharge to grid is positive
 
-    # Battery Power limits
-    constraints += [p_charge <= p_max_charge]
-    constraints += [p_discharge[t] <= p_max_discharge]
+        # ----------- Constraints -----------
+        constraints = []
+        constraints += [soc[0] == self.soc_init] # Set the inital soc 
+        constraints += [soc[-1] == self.soc_init] # Set the final soc 
 
-    # Limit battery discharge export based on price
-    if(prices_sell[t] < battery_min_export_cost):
-        constraints += [(p_discharge[t] <= max(0, load_5min[t] - solar_5min[t]))]
+        #prices_sell[180:210] = -0.7 # Allow testing of various pricings
+        #prices_buy[180:210] = -0.5
 
-    # DC Solar Limits
-    constraints += [
-        solar_used[t] <= solar_5min[t],         # cannot exceed forecast
-        solar_used[t] <= solar_dc_charge_max,   # DC limit
-    ]
+        for t in range(int(self.N_5min)):
+            # SoC dynamics
+            constraints += [soc[t+1] == soc[t] + self.dt_5min * self.discharge_efficiency * p_charge[t] 
+                            - self.dt_5min / self.discharge_efficiency * p_discharge[t]]
+            # SoC limits
+            constraints += [soc[t+1] >= self.soc_min, soc[t+1] <= self.soc_max]
+            constraints += [soc[t+1] + low_energy_violation[t] >= self.battery_low_energy_threshold] # Soft reserve 
 
-    # DC Balance, Sum Inputs == Sum Outputs to DC bus
-    constraints += [solar_used[t] + p_discharge[t] == p_charge[t] + inverter_power[t]]
+            # Battery Power limits
+            constraints += [p_charge <= self.p_max_charge]
+            constraints += [p_discharge[t] <= self.p_max_discharge]
 
-    # AC Power Balance, Sum AC Sources == Sum AC Sinks
-    constraints += [grid_import[t] + inverter_power[t] == load_5min[t] + grid_export[t]]
+            # Limit battery discharge export based on price
+            if(self.prices_sell[t] < self.battery_min_export_cost):
+                constraints += [(p_discharge[t] <= max(0, self.load_5min[t] - self.solar_5min[t]))]
 
-    # Inverter AC Limit
-    constraints += [
-        inverter_power[t] <= inverter_p_max,
-        inverter_power[t] >= -inverter_p_max
-        ]
-    
+            # DC Solar Limits
+            constraints += [solar_used[t] <= self.solar_5min[t],    # Solar cannot exceed forecast
+                            solar_used[t] <= self.solar_dc_max]     # DC MPPT Limit
+            
+            # DC Balance, Sum Inputs == Sum Outputs to DC bus
+            constraints += [solar_used[t] + p_discharge[t] == p_charge[t] + inverter_power[t]]
 
-# -------------------------------
-# Objective: Minimise cost including battery discharge cost
-# -------------------------------
-objective = cp.Minimize(
-    cp.sum(cp.multiply(grid_import, prices_buy) * dt
-           - cp.multiply(grid_export, prices_sell) * dt
-           + cp.multiply(grid_import, grid_import_penalty_cost) * dt
-           + battery_low_energy_penalty_cost * low_energy_violation * dt
-           ))
+            # AC Power Balance, Sum AC Sources == Sum AC Sinks
+            constraints += [grid_import[t] + inverter_power[t] == self.load_5min[t] + grid_export[t]]
 
-# + battery_discharge_cost * p_discharge * dt
-# + battery_export_cost * (grid_export - solar_5min) * dt
+            constraints += [grid_import[t] <= self.grid_import_limit,
+                            grid_export[t] <= self.grid_export_limit]
 
-# -------------------------------
-# Solve
-# -------------------------------
-prob = cp.Problem(objective, constraints)
-prob.solve(solver=cp.ECOS)
+            # Inverter AC Limit
+            constraints += [inverter_power[t] <= self.inverter_p_max,
+                            inverter_power[t] >= -self.inverter_p_max]
 
-if prob.status not in ("optimal", "optimal_inaccurate"):
-    raise RuntimeError(f"MPC solve failed: {prob.status}")
+            # -------------------------------
+            # Objective: Minimise cost including battery discharge cost
+            # -------------------------------
+            objective = cp.Minimize(
+                cp.sum(cp.multiply(grid_import, self.prices_buy) * self.dt_5min
+                    - cp.multiply(grid_export, self.prices_sell) * self.dt_5min
+                    + cp.multiply(grid_import, self.grid_import_penalty_cost) * self.dt_5min
+                    + self.battery_low_energy_penalty_cost * low_energy_violation * self.dt_5min
+                    ))
 
-# -------------------------------
-# Results
-# -------------------------------
-battery_power = p_charge.value - p_discharge.value
-grid_net = grid_import.value - grid_export.value
-hours = np.arange(int(N)) * dt
+            # + battery_discharge_cost * p_discharge * dt
+            # + battery_export_cost * (grid_export - solar_5min) * dt
 
-now = datetime.now().replace(second=0, microsecond=0)
-time_index = [now + timedelta(minutes=5 * i) for i in range(int(N))]
+            # ---------- Solve ----------
+            prob = cp.Problem(objective, constraints)
+            prob.solve(solver=cp.ECOS)
 
-grid_kwh_import_per_interval = grid_import.value / steps_per_hr 
-grid_kwh_export_per_interval = grid_export.value / steps_per_hr 
+            # Don't continue if the solver failed
+            if prob.status not in ("optimal", "optimal_inaccurate"):
+                raise RuntimeError(f"MPC solve failed: {prob.status}")
+            
+            else: # Sim successfull 
+                # ---------- Results ----------
+                battery_power = p_charge.value - p_discharge.value
+                grid_net = grid_import.value - grid_export.value
+                #hours = np.arange(int(self.N_5min)) * self.dt_5min
 
-cost_import = np.sum(grid_kwh_import_per_interval * prices_buy)   # $ paid to grid
-revenue_export = np.sum(grid_kwh_export_per_interval * prices_sell)  # $ earned from export
-grid_profit = revenue_export - cost_import
+                now = datetime.now().replace(second=0, microsecond=0)
+                time_index = [now + timedelta(minutes=5 * i) for i in range(int(self.N_5min))]
+
+                grid_kwh_import_per_interval = grid_import.value / self.steps_per_hr 
+                grid_kwh_export_per_interval = grid_export.value / self.steps_per_hr 
+
+                cost_import = np.sum(grid_kwh_import_per_interval * self.prices_buy)   # $ paid to grid
+                revenue_export = np.sum(grid_kwh_export_per_interval * self.prices_sell)  # $ earned from export
+                grid_profit = revenue_export - cost_import
+
+                # store it in shared dict
+                output = {
+                    "time_index": time_index,
+                    "battery_power": battery_power.tolist(),
+                    "soc": soc.value.tolist(),
+                    "grid_net": grid_net.tolist(),
+                    "prices_buy": self.prices_buy.tolist(),
+                    "prices_sell": self.prices_sell.tolist(),
+                    "profit": float(grid_profit),
+                    "inverter_power": inverter_power.value.tolist(),
+                    "solar_forecast": self.solar_5min,
+                    "solar_used": solar_used.value.tolist(),
+                }
+                return output
+
+'''
 print(f"Profit: ${round(grid_profit, 2)}")
 #print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
 print(f"solar used: {round(solar_used.value[0],2)}  bat: {round(battery_power[0],2)}  load: {round(load_5min[0],2)} grid: {round(grid_net[0],2)}  p_charge: {round(p_charge.value[0],2)}  p_discharge: {round(p_discharge.value[0], 2)} inverter_power: {round(inverter_power.value[0], 2)}")
@@ -285,3 +291,5 @@ for ax in plt.gcf().axes:
 
 plt.tight_layout()
 plt.show()
+
+'''

@@ -34,6 +34,7 @@ class Plant:
         self.max_discharge_power = 24
         self.max_charge_power = 21
         self.max_pv_power = 24
+        self.max_inverter_power = 15
         self.max_export_power = 15
         self.max_import_power = 45
         self.load_avg_days = 3
