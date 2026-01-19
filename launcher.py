@@ -39,6 +39,7 @@ print("Streamlit dashboard started")
 try:
     # Your main loop
     output = mpc.run_optimisation()
+    mpc.display_results(output)
     #q.put(output)
     while True:
         #print("Main loop running...")

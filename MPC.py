@@ -7,6 +7,11 @@ from datetime import datetime, timedelta
 import pytz
 import matplotlib.dates as mdates
 
+from amber_api import AmberAPI  
+from ha_api import HomeAssistantAPI
+import PlantControl
+from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
+
 
 class MPC:
     def __init__(self, amber, plant, ha):
@@ -42,6 +47,7 @@ class MPC:
         self.grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
         self.battery_low_energy_threshold = 5 # kWh
         self.battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
+        self.solar_curtailment_penalty = 0.001  # $/kWh just enough to encorage use of the solar
 
         
         
@@ -135,10 +141,11 @@ class MPC:
         p_discharge = cp.Variable(int(self.N_5min), nonneg=True)
         soc = cp.Variable(int(self.N_5min)+1)
         low_energy_violation = cp.Variable(int(self.N_5min), nonneg=True)
-        export_penalty = cp.Variable(int(self.N_5min), nonneg=True) # Penalty for exporting at low prices
 
         # Solar
         solar_used = cp.Variable(int(self.N_5min), nonneg=True) # Solar used out of the forecast value (allows for curtailment)
+        solar_curtail = cp.Variable(int(self.N_5min), nonneg=True) # Approximate amount of curtailment occouring
+
 
         # Grid import/export
         grid_import = cp.Variable(int(self.N_5min), nonneg=True)
@@ -152,8 +159,10 @@ class MPC:
         constraints += [soc[0] == self.soc_init] # Set the inital soc 
         constraints += [soc[-1] == self.soc_init] # Set the final soc 
 
-        #prices_sell[180:210] = -0.7 # Allow testing of various pricings
-        #prices_buy[180:210] = -0.5
+        #self.prices_sell[100:210] = 0.07 # Allow testing of various pricings
+        #self.prices_buy[100:210] = 0.15
+
+        #zero_price_mask = (self.prices_sell == 0).astype(float) # Represents when prices are zero
 
         for t in range(int(self.N_5min)):
             # SoC dynamics
@@ -164,16 +173,18 @@ class MPC:
             constraints += [soc[t+1] + low_energy_violation[t] >= self.battery_low_energy_threshold] # Soft reserve 
 
             # Battery Power limits
-            constraints += [p_charge <= self.p_max_charge]
+            constraints += [p_charge[t] <= self.p_max_charge]
             constraints += [p_discharge[t] <= self.p_max_discharge]
-
+ 
             # Limit battery discharge export based on price
             if(self.prices_sell[t] < self.battery_min_export_cost):
                 constraints += [(p_discharge[t] <= max(0, self.load_5min[t] - self.solar_5min[t]))]
 
             # DC Solar Limits
             constraints += [solar_used[t] <= self.solar_5min[t],    # Solar cannot exceed forecast
-                            solar_used[t] <= self.solar_dc_max]     # DC MPPT Limit
+                            solar_used[t] <= self.solar_dc_max,     # DC MPPT Limit
+                            solar_used[t] + solar_curtail[t] == self.solar_5min[t] # Solar Curtailment
+                            ]     
             
             # DC Balance, Sum Inputs == Sum Outputs to DC bus
             constraints += [solar_used[t] + p_discharge[t] == p_charge[t] + inverter_power[t]]
@@ -188,108 +199,124 @@ class MPC:
             constraints += [inverter_power[t] <= self.inverter_p_max,
                             inverter_power[t] >= -self.inverter_p_max]
 
-            # -------------------------------
-            # Objective: Minimise cost including battery discharge cost
-            # -------------------------------
-            objective = cp.Minimize(
-                cp.sum(cp.multiply(grid_import, self.prices_buy) * self.dt_5min
-                    - cp.multiply(grid_export, self.prices_sell) * self.dt_5min
-                    + cp.multiply(grid_import, self.grid_import_penalty_cost) * self.dt_5min
-                    + self.battery_low_energy_penalty_cost * low_energy_violation * self.dt_5min
-                    ))
+        # -------------------------------
+        # Objective: Minimise cost including battery discharge cost
+        # -------------------------------
+        objective = cp.Minimize(
+            cp.sum(cp.multiply(grid_import, self.prices_buy) * self.dt_5min
+                - cp.multiply(grid_export, self.prices_sell) * self.dt_5min
+                + cp.multiply(grid_import, self.grid_import_penalty_cost) * self.dt_5min
+                + cp.multiply(self.battery_low_energy_penalty_cost,  low_energy_violation) * self.dt_5min
+                + cp.multiply(self.solar_curtailment_penalty, solar_curtail) * self.dt_5min
+                ))
+        
+        #  self.charge_reward = 0.00
+        # - cp.multiply(self.charge_reward, p_charge) * self.dt_5min
+        # + battery_discharge_cost * p_discharge * dt
+        # + battery_export_cost * (grid_export - solar_5min) * dt
 
-            # + battery_discharge_cost * p_discharge * dt
-            # + battery_export_cost * (grid_export - solar_5min) * dt
+        # ---------- Solve ----------
+        prob = cp.Problem(objective, constraints)
+        prob.solve(solver=cp.ECOS)
 
-            # ---------- Solve ----------
-            prob = cp.Problem(objective, constraints)
-            prob.solve(solver=cp.ECOS)
+        # Don't continue if the solver failed
+        if prob.status not in ("optimal", "optimal_inaccurate"):
+            raise RuntimeError(f"MPC solve failed: {prob.status}")
+        
+        else: # Sim successfull 
+            # ---------- Results ----------
+            battery_power = p_charge.value - p_discharge.value
+            grid_net = grid_import.value - grid_export.value
+            #hours = np.arange(int(self.N_5min)) * self.dt_5min
 
-            # Don't continue if the solver failed
-            if prob.status not in ("optimal", "optimal_inaccurate"):
-                raise RuntimeError(f"MPC solve failed: {prob.status}")
-            
-            else: # Sim successfull 
-                # ---------- Results ----------
-                battery_power = p_charge.value - p_discharge.value
-                grid_net = grid_import.value - grid_export.value
-                #hours = np.arange(int(self.N_5min)) * self.dt_5min
+            now = datetime.now().replace(second=0, microsecond=0)
+            time_index = [now + timedelta(minutes=5 * i) for i in range(int(self.N_5min))]
 
-                now = datetime.now().replace(second=0, microsecond=0)
-                time_index = [now + timedelta(minutes=5 * i) for i in range(int(self.N_5min))]
+            grid_kwh_import_per_interval = grid_import.value / self.steps_per_hr 
+            grid_kwh_export_per_interval = grid_export.value / self.steps_per_hr 
 
-                grid_kwh_import_per_interval = grid_import.value / self.steps_per_hr 
-                grid_kwh_export_per_interval = grid_export.value / self.steps_per_hr 
+            cost_import = np.sum(grid_kwh_import_per_interval * self.prices_buy)   # $ paid to grid
+            revenue_export = np.sum(grid_kwh_export_per_interval * self.prices_sell)  # $ earned from export
+            grid_profit = revenue_export - cost_import
 
-                cost_import = np.sum(grid_kwh_import_per_interval * self.prices_buy)   # $ paid to grid
-                revenue_export = np.sum(grid_kwh_export_per_interval * self.prices_sell)  # $ earned from export
-                grid_profit = revenue_export - cost_import
+            # store it in shared dict
+            output = {
+                "time_index": time_index,
+                "battery_power": battery_power.tolist(),
+                "soc": soc.value.tolist(),
+                "grid_net": grid_net.tolist(),
+                "prices_buy": self.prices_buy.tolist(),
+                "prices_sell": self.prices_sell.tolist(),
+                "profit": float(grid_profit),
+                "inverter_power": inverter_power.value.tolist(),
+                "solar_forecast": self.solar_5min,
+                "solar_used": solar_used.value.tolist(),
+                "load": self.load_5min
+            }
+            return output
 
-                # store it in shared dict
-                output = {
-                    "time_index": time_index,
-                    "battery_power": battery_power.tolist(),
-                    "soc": soc.value.tolist(),
-                    "grid_net": grid_net.tolist(),
-                    "prices_buy": self.prices_buy.tolist(),
-                    "prices_sell": self.prices_sell.tolist(),
-                    "profit": float(grid_profit),
-                    "inverter_power": inverter_power.value.tolist(),
-                    "solar_forecast": self.solar_5min,
-                    "solar_used": solar_used.value.tolist(),
-                }
-                return output
+    def display_results(self, output):
+        print(f"Profit: ${round(output["profit"], 2)}")
+        #print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
+        print(f"solar used: {round(output["solar_used"][0],2)}  bat: {round(output["battery_power"][0],2)}  load: {round(output["load"][0],2)} grid: {round(output["grid_net"][0],2)}  inverter_power: {round(output["inverter_power"][0], 2)}")
 
-'''
-print(f"Profit: ${round(grid_profit, 2)}")
-#print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
-print(f"solar used: {round(solar_used.value[0],2)}  bat: {round(battery_power[0],2)}  load: {round(load_5min[0],2)} grid: {round(grid_net[0],2)}  p_charge: {round(p_charge.value[0],2)}  p_discharge: {round(p_discharge.value[0], 2)} inverter_power: {round(inverter_power.value[0], 2)}")
+        plt.figure(figsize=(14,8))
 
-plt.figure(figsize=(14,8))
-
-
-# --------- Top plot: battery & net load ----------
-plt.subplot(2,1,1)
-plt.plot(time_index, battery_power, label='Battery Power (kW)', color='blue')
-plt.plot(time_index, load_5min, label='Load', color='orange', alpha=1)
-plt.plot(time_index, solar_5min, label='Available Solar', color='limegreen', alpha=1, linestyle='--')
-plt.plot(time_index, solar_used.value, label='Solar Used', color='limegreen')
-plt.plot(time_index, inverter_power.value, label='Inverter Power (kW)', color='purple')
-plt.plot(time_index, grid_net, label='Grid Net Import (+ buy, - sell)', color='black', linestyle='--')
-plt.axhline(0, color='black', linewidth=0.5)
-plt.ylabel('Power (kW)')
-plt.title('Battery Schedule & Net Load with 24h Amber Forecast and Discharge Cost')
-plt.legend()
-plt.grid(True)
+        time_index = output["time_index"]
+        # --------- Top plot: battery & net load ----------
+        plt.subplot(2,1,1)
+        plt.plot(time_index, output["battery_power"], label='Battery Power (kW)', color='blue')
+        plt.plot(time_index, output["load"], label='Load', color='orange', alpha=1)
+        plt.plot(time_index, output["solar_forecast"], label='Available Solar', color='limegreen', alpha=1, linestyle='--')
+        plt.plot(time_index, output["solar_used"], label='Solar Used', color='limegreen')
+        plt.plot(time_index, output["inverter_power"], label='Inverter Power (kW)', color='purple')
+        plt.plot(time_index, output["grid_net"], label='Grid Net Import (+ buy, - sell)', color='black', linestyle='--')
+        plt.axhline(0, color='black', linewidth=0.5)
+        plt.ylabel('Power (kW)')
+        plt.title('Battery Schedule & Net Load with 24h Amber Forecast and Discharge Cost')
+        plt.legend()
+        plt.grid(True)
 
 
 
-# Secondary y-axis for prices
-plt.twinx()
-plt.plot(time_index, prices_buy, label='Buy Price', color='green')
-plt.plot(time_index, prices_sell, label='Sell Price', color='red')
-plt.ylabel('Price ($/kWh)')
-plt.legend(loc='upper right')
+        # Secondary y-axis for prices
+        plt.twinx()
+        plt.plot(time_index, output["prices_buy"], label='Buy Price', color='green')
+        plt.plot(time_index, output["prices_sell"], label='Sell Price', color='red')
+        plt.ylabel('Price ($/kWh)')
+        plt.legend(loc='upper right')
 
-# --------- Bottom plot: SOC ----------
-plt.subplot(2,1,2)
-plt.plot(time_index, soc.value[0:-1], label='Battery SOC (kWh)', color='purple')
-plt.axhline(soc_min, color='red', linestyle='--', label='SOC Min/Max')
-plt.axhline(soc_max, color='red', linestyle='--')
-plt.axhline(battery_low_energy_threshold, color='orange', linestyle='--', label='Low Energy Threshold')
+        # --------- Bottom plot: SOC ----------
+        plt.subplot(2,1,2)
+        plt.plot(time_index, output["soc"][0:-1], label='Battery SOC (kWh)', color='purple')
+        plt.axhline(self.soc_min, color='red', linestyle='--', label='SOC Min/Max')
+        plt.axhline(self.soc_max, color='red', linestyle='--')
+        plt.axhline(self.battery_low_energy_threshold, color='orange', linestyle='--', label='Low Energy Threshold')
 
-plt.xlabel('Hour of Day')
-plt.ylabel('SOC (kWh)')
-plt.title('Battery State of Charge')
-plt.legend()
-plt.grid(True)
+        plt.xlabel('Hour of Day')
+        plt.ylabel('SOC (kWh)')
+        plt.title('Battery State of Charge')
+        plt.legend()
+        plt.grid(True)
 
-for ax in plt.gcf().axes:
-    ax.xaxis.set_major_locator(mdates.HourLocator())
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-    ax.tick_params(axis='x', rotation=0)
+        for ax in plt.gcf().axes:
+            ax.xaxis.set_major_locator(mdates.HourLocator())
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            ax.tick_params(axis='x', rotation=0)
 
-plt.tight_layout()
-plt.show()
+        plt.tight_layout()
+        plt.show()
 
-'''
+
+amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
+
+plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
+ha = HomeAssistantAPI(
+        base_url=HA_URL,
+        token=HA_TOKEN,
+        errors=True
+    )
+
+mpc = MPC(amber, plant, ha)
+output = mpc.run_optimisation()
+mpc.display_results(output)
