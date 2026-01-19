@@ -44,14 +44,12 @@ class MPC:
         self.soc_min = 0.0 * self.battery_capacity
         self.soc_max = 1.0 * self.battery_capacity
         self.discharge_efficiency = 0.95
-        self.battery_min_export_cost = 0.08  # $/kWh
+        self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
         self.grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
         self.battery_low_energy_threshold = 5 # kWh
         self.battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
-        self.solar_curtailment_penalty = 0.000  # $/kWh just enough to encorage use of the solar
-
-        
-        
+        self.solar_curtailment_penalty = 0.0001  # $/kWh just enough to encorage use of the solar
+       
     def update_limits(self):
         self.battery_capacity = self.plant.rated_capacity  # kWh
         self.solar_dc_max = self.plant.max_pv_power             # kW (DC limit for MPPTs)
@@ -70,10 +68,8 @@ class MPC:
         load_power_states = self.plant.forecast_load_power(forecast_hours_from_now=self.forecast_hrs) # Calculate the average load power
         self.load_5min = [powerstate.state for powerstate in load_power_states]
         
-
         # Solar Forecast
         self.solar_5min = self.plant.forecast_solar_power(forecast_hours_from_now=self.forecast_hrs)
-
 
         # Inject the current real load and solar values into the sim
         if(inject_real_values):
@@ -81,69 +77,17 @@ class MPC:
             self.solar_5min[0] = self.plant.solar_kw
             self.load_5min[0] = self.plant.load_power
 
-        # -------------------------------
-        # Fetch Amber 12-hour forecast
-        # -------------------------------
-        # Get Amber data
-        #data = amber.get_data(partial_update=False)
+        # Amber Forecast
+        [general_price_forecast, feed_in_price_forecast] = self.amber.get_extrapolated_forecast(hours=self.forecast_hrs)
 
-        # Expand the 30 minutely price out to 5 minutely 
-        def expand_prices(prices_30m, steps_per_price):
-            return np.repeat(prices_30m, steps_per_price)
-
-        # Get the past prices to form the 2nd half of the 24hr forecast due to the 12hr limit on forecasts
-        [past_general_5_min, past_feed_in_5_min] = self.amber.get_past_prices(self.amber_past_30min_intervals, resolution=30)
-        #past_feed_in_5_min = list(reversed(past_feed_in_5_min))
-        #past_general_5_min = list(reversed(past_general_5_min))
-        past_general_prices_5_min = [round(pf.price) for pf in past_general_5_min] # Extract the price and round it from the forecasts
-        past_feed_in_prices_5_min = [round(pf.price) for pf in past_feed_in_5_min]
-
-        past_general_prices_5_min = expand_prices(past_general_prices_5_min,  self.steps_per_price) # Expand the prices out to 5 minutely
-        past_feed_in_prices_5_min = expand_prices(past_feed_in_prices_5_min,  self.steps_per_price)
-
-        # Print previous Prices
-        #for d in past_feed_in_5_min:4
-        #    print(f"Time: {d.start_time}  Price: {d.price}")
-
-        # Get the 5 minutely price forecasts
-        [general_price_forecast_5_min, feed_in_price_forecast_5_min] = self.amber.get_forecast(next_intervals=60//5, resolution=5, advanced_forecast=False)
-        feed_in_price_forecast_5_min = [round(feedIn.price) for feedIn in feed_in_price_forecast_5_min][0:11] # select only the first 12 forecast intervals
-        general_price_forecast_5_min = [round(general.price) for general in general_price_forecast_5_min][0:11]
-
-        # Get the 30 minutely forecast
-        [general_price_forecast, feed_in_price_forecast] = self.amber.get_forecast(next_intervals=self.amber_forecast_30min_intervals, resolution=30, advanced_forecast=False)
-
-        #Check amber returned the requested number of forecasts
-        if(len(feed_in_price_forecast) < self.amber_forecast_30min_intervals):
-            print(f"Amber only returned {len(feed_in_price_forecast)} forecast intervals when {self.amber_forecast_30min_intervals} intervals were requested")
-            raise("Amber didn't return enough forecast intervals")
-
-        general_price_forecast = [round(pf.price) for pf in general_price_forecast]
-        feed_in_price_forecast = [round(pf.price) for pf in feed_in_price_forecast]
-
-
-        general_price_forecast = expand_prices(general_price_forecast,  self.steps_per_price)
-        feed_in_price_forecast = expand_prices(feed_in_price_forecast, self.steps_per_price)
-
-        #print(f"Forecast amber prices {feed_in_price_forecast} len {len(feed_in_price_forecast)}")
-
-
-        general_price_forecast = np.append(general_price_forecast, past_general_prices_5_min) # append the past prices to the 12hr forecast to allow for a 24hr prediction
-        feed_in_price_forecast = np.append(feed_in_price_forecast, past_feed_in_prices_5_min)
-
-        feed_in_price_forecast[0:len(feed_in_price_forecast_5_min)] = feed_in_price_forecast_5_min
-        general_price_forecast[0:len(general_price_forecast_5_min)] = general_price_forecast_5_min
-
-        # Extract forecast prices
-        general_prices = np.array(general_price_forecast) / 100      # buy price in $ from cents
-        feedin_prices  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
-
-        # Assign to optimization variables
-        self.prices_buy  = general_prices[:self.N_5min]
-        self.prices_sell = feedin_prices[:self.N_5min]
+        # Convert to $/kWh
+        self.prices_buy = np.array(general_price_forecast) / 100      # buy price in $ from cents
+        self.prices_sell  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
 
     def run_optimisation(self):
         self.update_values()
+
+        self.prices_sell = self.prices_sell - 0.0001
 
         start = time.time()
         # ----------- Variables -----------
@@ -168,12 +112,15 @@ class MPC:
         # ----------- Constraints -----------
         constraints = []
         constraints += [soc[0] == self.soc_init] # Set the inital soc 
-        constraints += [soc[-1] == self.soc_init] # Set the final soc 
+        #constraints += [soc[-1] == self.soc_init] # Set the final soc 
 
-        #self.prices_sell[100:210] = 0.07 # Allow testing of various pricings
-        #self.prices_buy[100:210] = 0.15
+        #self.prices_sell[10:12] = -0.01 # Allow testing of various pricings
+        #self.prices_buy[10:12] = 0.03
 
         #zero_price_mask = (self.prices_sell == 0).astype(float) # Represents when prices are zero
+
+        #low_price_mask = (self.prices_sell < self.battery_min_export_cost).astype(float) # Mask to represent when price is below min dispatch price
+        #battery_export = cp.Variable(int(self.N_5min), nonneg=True)
 
         for t in range(int(self.N_5min)):
             # SoC dynamics
@@ -186,10 +133,10 @@ class MPC:
             # Battery Power limits
             constraints += [p_charge[t] <= self.p_max_charge]
             constraints += [p_discharge[t] <= self.p_max_discharge]
- 
+            
             # Limit battery discharge export based on price
-            if(self.prices_sell[t] < self.battery_min_export_cost):
-                constraints += [(p_discharge[t] <= max(0, self.load_5min[t] - self.solar_5min[t]))]
+            #if(self.prices_sell[t] < self.battery_min_export_cost):
+            #    constraints += [(p_discharge[t] <= max(0, self.load_5min[t] - self.solar_5min[t]))]
 
             # DC Solar Limits
             constraints += [solar_used[t] <= self.solar_5min[t],    # Solar cannot exceed forecast
@@ -219,12 +166,14 @@ class MPC:
                 + cp.multiply(grid_import, self.grid_import_penalty_cost) * self.dt_5min
                 + cp.multiply(self.battery_low_energy_penalty_cost,  low_energy_violation) * self.dt_5min
                 + cp.multiply(self.solar_curtailment_penalty, solar_curtail) * self.dt_5min
+                + cp.multiply(self.battery_min_export_cost, p_discharge) * self.dt_5min
                 ))
         
         #  self.charge_reward = 0.00
         # - cp.multiply(self.charge_reward, p_charge) * self.dt_5min
         # + battery_discharge_cost * p_discharge * dt
         # + battery_export_cost * (grid_export - solar_5min) * dt
+        # + cp.multiply(battery_export, low_price_mask * self.battery_min_export_cost) * self.dt_5min
 
         # ---------- Solve ----------
         prob = cp.Problem(objective, constraints)
@@ -268,9 +217,9 @@ class MPC:
             return output
 
     def display_results(self, output):
-        print(f"Profit: ${round(output["profit"], 2)}")
+        print(f"Profit: ${round(output['profit'], 2)}")
         #print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
-        print(f"solar used: {round(output["solar_used"][0],2)}  bat: {round(output["battery_power"][0],2)}  load: {round(output["load"][0],2)} grid: {round(output["grid_net"][0],2)}  inverter_power: {round(output["inverter_power"][0], 2)}")
+        print(f"solar used: {round(output['solar_used'][0],2)}  bat: {round(output['battery_power'][0],2)}  load: {round(output['load'][0],2)} grid: {round(output['grid_net'][0],2)}  inverter_power: {round(output['inverter_power'][0], 2)}")
 
         plt.figure(figsize=(14,8))
 

@@ -1,7 +1,9 @@
 import requests
 import time
+import numpy as np
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+
 
 @dataclass
 class PriceForecast:
@@ -79,7 +81,6 @@ class AmberAPI:
         
         return r.json()
 
-
     def get_sites(self):
         """Return all sites linked to your Amber account."""
         url = f"{self.base}/sites"
@@ -115,7 +116,6 @@ class AmberAPI:
 
         return [previous_general_prices, previous_feed_in_price]
         
-
     def get_forecast(self, next_intervals, resolution, advanced_forecast = False):
         """Return 12 hours of prices from now for a given site."""
         if(resolution != 30 and resolution != 5):
@@ -152,6 +152,45 @@ class AmberAPI:
 
         return [general_price_forecast, feed_in_price_forecast]
     
+    # Get the 5 min, 30 min and past prices and combine into a 5 minutely 'forecast' that extends past the 12 hr limit
+    def get_extrapolated_forecast(self, hours, advanced_forecast = False): 
+        steps_per_price = 30 // 5 # = 6
+        N_30min = int(hours / (30/60)) # Number of 30 min segments requested
+        N_5min = int(hours / (5/60))   # Number of 5 min segments requested
+
+        amber_forecast_30min_intervals = (60//30)*12    # Get the max 12hr forecast
+        amber_past_30min_intervals = max(N_30min - amber_forecast_30min_intervals, 0)  # Fill the rest of the sim with past prices
+    
+        # Get the 5 minutely price forecasts
+        [general_price_forecast_5_min, feed_in_price_forecast_5_min] = self.get_forecast(next_intervals=60//5, resolution=5, advanced_forecast=advanced_forecast)
+        feed_in_price_forecast_5_min = [round(feedIn.price) for feedIn in feed_in_price_forecast_5_min][0:11] # select only the first 12 forecast intervals (1 hr)
+        general_price_forecast_5_min = [round(general.price) for general in general_price_forecast_5_min][0:11]
+
+        # Get the 30 minutely forecast
+        [general_price_forecast_30_min, feed_in_price_forecast_30_min] = self.get_forecast(next_intervals=amber_forecast_30min_intervals, resolution=30, advanced_forecast=advanced_forecast)
+        general_price_forecast_30_min = [round(pf.price) for pf in general_price_forecast_30_min]
+        feed_in_price_forecast_30_min = [round(pf.price) for pf in feed_in_price_forecast_30_min]
+        general_price_forecast_30_min_expanded = np.repeat(general_price_forecast_30_min,  steps_per_price)
+        feed_in_price_forecast_30_min_expanded = np.repeat(feed_in_price_forecast_30_min, steps_per_price)
+
+
+        # Get the past prices to form the 2nd half of the 24hr forecast due to the 12hr limit on forecasts
+        [past_general_5_min, past_feed_in_5_min] = self.get_past_prices(amber_past_30min_intervals, resolution=30)
+        past_general_prices_5_min = [round(pf.price) for pf in past_general_5_min] # Extract the price and round it from the forecasts
+        past_feed_in_prices_5_min = [round(pf.price) for pf in past_feed_in_5_min]
+        past_general_prices_5_min = np.repeat(past_general_prices_5_min,  steps_per_price) # Expand the prices out to 5 minutely
+        past_feed_in_prices_5_min = np.repeat(past_feed_in_prices_5_min,  steps_per_price)
+
+
+        general_price_forecast = np.append(general_price_forecast_30_min_expanded, past_general_prices_5_min) # append the past prices to the 12hr forecast to allow for a 24hr prediction
+        feed_in_price_forecast = np.append(feed_in_price_forecast_30_min_expanded, past_feed_in_prices_5_min)
+
+        feed_in_price_forecast[0:len(feed_in_price_forecast_5_min)] = feed_in_price_forecast_5_min
+        general_price_forecast[0:len(general_price_forecast_5_min)] = general_price_forecast_5_min
+
+        # Return extended forecast
+        return [general_price_forecast[:N_5min], feed_in_price_forecast[:N_5min]]
+
     def get_current_prices(self):
         url = (f"{self.base}/sites/{self.site_id}/prices/current")
 
@@ -200,8 +239,7 @@ class AmberAPI:
             feedIn_12hr_forecast_sorted=storted_feed_in_forecast
             )
         return self.data
-
-        
+      
 
 '''
 from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
