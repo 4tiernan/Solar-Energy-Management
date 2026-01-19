@@ -4,10 +4,17 @@ import time
 from amber_api import AmberAPI  
 from ha_api import HomeAssistantAPI
 import PlantControl
-from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
+from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID, MQTT_HOST, MQTT_USER, MQTT_PASS
 from MPC import MPC
 
-from multiprocessing import Queue
+import json
+import paho.mqtt.client as mqtt
+
+mqtt_client = mqtt.Client()
+mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)  # if required
+mqtt_client.connect(MQTT_HOST, 1883)
+mqtt_client.loop_start()
+
 
 
 amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
@@ -29,20 +36,22 @@ streamlit_proc = subprocess.Popen([
     "streamlit",
     "run",
     "webserver.py",
-    "--server.headless=true"
+    "--server.headless=true",
+    "--theme.base",
+    "light"
 ])
 
 print("Streamlit dashboard started")
 
-#q: Queue
+
 
 try:
     # Your main loop
     output = mpc.run_optimisation()
-    mpc.display_results(output)
-    #q.put(output)
+    #mpc.display_results(output)
+    # ---------------- send a message ------------------
+    mqtt_client.publish("home/mpc/output", json.dumps(output), retain=True)
     while True:
-        #print("Main loop running...")
         time.sleep(1)
 
 except KeyboardInterrupt:

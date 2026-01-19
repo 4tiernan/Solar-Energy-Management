@@ -8,10 +8,10 @@ import pytz
 import matplotlib.dates as mdates
 import time
 
-from amber_api import AmberAPI  
-from ha_api import HomeAssistantAPI
-import PlantControl
-from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
+#from amber_api import AmberAPI  
+#from ha_api import HomeAssistantAPI
+#import PlantControl
+#from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 
 
 class MPC:
@@ -186,8 +186,8 @@ class MPC:
         
         else: # Sim successfull 
             # ---------- Results ----------
-            battery_power = p_charge.value - p_discharge.value
-            grid_net = grid_import.value - grid_export.value
+            battery_power = (p_charge.value - p_discharge.value).tolist()
+            grid_net = (grid_import.value - grid_export.value).tolist()
             #hours = np.arange(int(self.N_5min)) * self.dt_5min
 
             now = datetime.now().replace(second=0, microsecond=0)
@@ -202,10 +202,10 @@ class MPC:
 
             # store it in shared dict
             output = {
-                "time_index": time_index,
-                "battery_power": battery_power.tolist(),
+                "time_index": [time_idx.isoformat() for time_idx in time_index],
+                "battery_power": battery_power,
                 "soc": soc.value.tolist(),
-                "grid_net": grid_net.tolist(),
+                "grid_net": grid_net,
                 "prices_buy": self.prices_buy.tolist(),
                 "prices_sell": self.prices_sell.tolist(),
                 "profit": float(grid_profit),
@@ -214,8 +214,18 @@ class MPC:
                 "solar_used": solar_used.value.tolist(),
                 "load": self.load_5min
             }
-            return output
-
+            
+            return self.convert_to_python(output)
+        
+    def convert_to_python(self, obj): # Convert all np objects to python objects
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, dict):
+            return {k: self.convert_to_python(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self.convert_to_python(v) for v in obj]
+        return obj
+    
     def display_results(self, output):
         print(f"Profit: ${round(output['profit'], 2)}")
         #print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
@@ -268,7 +278,7 @@ class MPC:
         plt.tight_layout()
         plt.show()
 
-
+'''
 amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
 
 plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
@@ -279,4 +289,4 @@ ha = HomeAssistantAPI(
     )
 
 mpc = MPC(amber, plant, ha)
-mpc.display_results(mpc.run_optimisation())
+mpc.display_results(mpc.run_optimisation())'''
