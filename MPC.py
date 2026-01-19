@@ -8,10 +8,10 @@ import pytz
 import matplotlib.dates as mdates
 import time
 
-#from amber_api import AmberAPI  
-#from ha_api import HomeAssistantAPI
-#import PlantControl
-#from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
+from amber_api import AmberAPI  
+from ha_api import HomeAssistantAPI
+import PlantControl
+from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 
 
 class MPC:
@@ -278,7 +278,7 @@ class MPC:
         plt.tight_layout()
         plt.show()
 
-'''
+
 amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
 
 plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
@@ -289,4 +289,4 @@ ha = HomeAssistantAPI(
     )
 
 mpc = MPC(amber, plant, ha)
-mpc.display_results(mpc.run_optimisation())'''
+mpc.display_results(mpc.run_optimisation())

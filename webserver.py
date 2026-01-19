@@ -6,6 +6,7 @@ import json
 import paho.mqtt.client as mqtt
 from api_token_secrets import MQTT_HOST, MQTT_USER, MQTT_PASS
 import datetime
+import time
 
 if "mpc_output" not in st.session_state:
     st.session_state.mpc_output = {}
@@ -24,9 +25,12 @@ output = {
     "load": [0,1,2,3]
 }
 
+data_received = False
+
 def on_message(client, userdata, msg):
-    global output
+    global output, data_received
     output = json.loads(msg.payload)
+    data_received = True
 
 client = mqtt.Client()
 client.username_pw_set(MQTT_USER, MQTT_PASS)
@@ -35,6 +39,9 @@ client.connect(MQTT_HOST, 1883)
 client.subscribe("home/mpc/output")
 client.loop_start()
 
+# Wait until we get data before trying to display it
+while data_received == False:
+    time.sleep(0.01)
 
 st.set_page_config(
     page_title="MPC Dashboard",
@@ -148,10 +155,10 @@ def display_results_streamlit(output):
     fig.update_xaxes(title_text="Hour of Day", row=2, col=1)
 
     # ---- set soft limits for SOC ----
-    fig.update_yaxes(range=[0, 40], constrain='range', row=2, col=1)
+    fig.update_yaxes(range=[0, 45], constrain='range', row=2, col=1)
 
     # ---- set soft limits for schedule ----
-    fig.update_yaxes(range=[-15, 15], constrain='range', row=1, col=1)
+    fig.update_yaxes(range=[-16, 16], constrain='range', row=1, col=1)
 
     # Grid lines
     fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor="LightGray")
