@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import pytz
 import matplotlib.dates as mdates
+import time
 
 from amber_api import AmberAPI  
 from ha_api import HomeAssistantAPI
@@ -47,7 +48,7 @@ class MPC:
         self.grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
         self.battery_low_energy_threshold = 5 # kWh
         self.battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
-        self.solar_curtailment_penalty = 0.001  # $/kWh just enough to encorage use of the solar
+        self.solar_curtailment_penalty = 0.000  # $/kWh just enough to encorage use of the solar
 
         
         
@@ -61,16 +62,24 @@ class MPC:
         self.grid_export_limit = self.plant.max_export_power    # kW (Grid export limit)      
 
     # Update any values or forecasts required to run the sim
-    def update_values(self):        
+    def update_values(self, inject_real_values = True):        
         self.soc_init = self.plant.kwh_stored_available
 
         # ---------- Forecasts ----------
         # Load Forecast
         load_power_states = self.plant.forecast_load_power(forecast_hours_from_now=self.forecast_hrs) # Calculate the average load power
         self.load_5min = [powerstate.state for powerstate in load_power_states]
+        
 
         # Solar Forecast
         self.solar_5min = self.plant.forecast_solar_power(forecast_hours_from_now=self.forecast_hrs)
+
+
+        # Inject the current real load and solar values into the sim
+        if(inject_real_values):
+            self.plant.update_data()
+            self.solar_5min[0] = self.plant.solar_kw
+            self.load_5min[0] = self.plant.load_power
 
         # -------------------------------
         # Fetch Amber 12-hour forecast
@@ -135,6 +144,8 @@ class MPC:
 
     def run_optimisation(self):
         self.update_values()
+
+        start = time.time()
         # ----------- Variables -----------
         # Battery
         p_charge = cp.Variable(int(self.N_5min), nonneg=True)
@@ -218,6 +229,7 @@ class MPC:
         # ---------- Solve ----------
         prob = cp.Problem(objective, constraints)
         prob.solve(solver=cp.ECOS)
+        print(f"Solver took {round(time.time()-start,2)} seconds to solve")
 
         # Don't continue if the solver failed
         if prob.status not in ("optimal", "optimal_inaccurate"):
@@ -318,5 +330,4 @@ ha = HomeAssistantAPI(
     )
 
 mpc = MPC(amber, plant, ha)
-output = mpc.run_optimisation()
-mpc.display_results(output)
+mpc.display_results(mpc.run_optimisation())
