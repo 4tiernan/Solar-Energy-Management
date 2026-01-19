@@ -154,8 +154,8 @@ def display_results_streamlit(output):
     fig.update_yaxes(range=[-15, 15], constrain='range', row=1, col=1)
 
     # Grid lines
-    fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor="whitesmoke")
-    fig.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor="whitesmoke")
+    fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor="LightGray")
+    fig.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor="LightGray")
 
     st.plotly_chart(fig, use_container_width=True)
 
