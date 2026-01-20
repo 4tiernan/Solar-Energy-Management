@@ -3,6 +3,17 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
 
+def round_to_nearest_5min(dt: datetime) -> datetime:
+    seconds = dt.minute * 60 + dt.second
+    rounding = 5 * 60  # 5 minutes in seconds
+    rounded_seconds = int((seconds + rounding / 2) // rounding * rounding)
+
+    return dt.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    ) + datetime.timedelta(seconds=rounded_seconds)
+
 # -----------------------------
 # Plot: SOC trajectory (functional)
 # -----------------------------
@@ -23,7 +34,7 @@ def plot_mpc_results(st, output):
     # Time index handling
     # -------------------------------
     try:
-        time_index = [datetime.fromisoformat(t) for t in output["time_index"]]
+        time_index = [round_to_nearest_5min(datetime.datetime.fromisoformat(t.replace("Z", "+00:00"))) for t in output["time_index"]]
     except Exception:
         time_index = list(range(len(output["battery_power"])))
 

@@ -48,6 +48,18 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown("""
+<style>
+.block-container {
+    padding-top: 2rem;
+}
+h1 {
+    margin-top: 0rem;
+    margin-bottom: 0.0rem;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 st.subheader("🔋 MPC Plan Dashboard (Demo)")
 
