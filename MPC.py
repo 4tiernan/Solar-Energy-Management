@@ -209,7 +209,7 @@ class MPC:
                 "load": self.load_5min,
                 "soc_min": self.soc_min,
                 "soc_max": self.soc_max,
-                "low_energy_threshold": low_energy_violation.value.tolist()
+                "low_energy_threshold": self.battery_low_energy_threshold
             }
             
             return self.convert_to_python(output)
