@@ -8,10 +8,10 @@ import pytz
 import matplotlib.dates as mdates
 import time
 
-from amber_api import AmberAPI  
-from ha_api import HomeAssistantAPI
-import PlantControl
-from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
+#from amber_api import AmberAPI  
+#from ha_api import HomeAssistantAPI
+#import PlantControl
+#from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 
 
 class MPC:
@@ -112,7 +112,7 @@ class MPC:
         # ----------- Constraints -----------
         constraints = []
         constraints += [soc[0] == self.soc_init] # Set the inital soc 
-        #constraints += [soc[-1] == self.soc_init] # Set the final soc 
+        constraints += [soc[-1] == self.soc_init] # Set the final soc 
 
         #self.prices_sell[10:12] = -0.01 # Allow testing of various pricings
         #self.prices_buy[10:12] = 0.03
@@ -279,14 +279,14 @@ class MPC:
         plt.show()
 
 
-amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
+#amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
 
-plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
-ha = HomeAssistantAPI(
-        base_url=HA_URL,
-        token=HA_TOKEN,
-        errors=True
-    )
+#plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
+#ha = HomeAssistantAPI(
+#        base_url=HA_URL,
+#        token=HA_TOKEN,
+#        errors=True
+#    )
 
-mpc = MPC(amber, plant, ha)
-mpc.display_results(mpc.run_optimisation())
+#mpc = MPC(amber, plant, ha)
+#mpc.display_results(mpc.run_optimisation())
