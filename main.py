@@ -106,6 +106,7 @@ def update_sensors(amber_data):
     ha_mqtt.kwh_remaining_sensor.set_state(round(plant.kwh_stored_available, 2))
     ha_mqtt.target_discharge_sensor.set_state(round(EC.target_dispatch_price))
     ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))
+    ha_mqtt.kwh_required_till_sundown_sensor.set_state(round(EC.kwh_required_till_sundown, 2))
     ha_mqtt.amber_api_calls_remaining_sensor.set_state(amber.rate_limit_remaining)
     ha_mqtt.working_mode_sensor.set_state(EC.working_mode)
     grid_export_power = round(ha.get_numeric_state("sensor.sigen_plant_grid_export_power"), 2)

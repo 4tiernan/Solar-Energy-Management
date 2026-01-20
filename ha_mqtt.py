@@ -151,9 +151,16 @@ kwh_remaining_sensor = CreateSensor(
     unit_of_measurement="kWh"
 )
 
+
 kwh_required_overnight_sensor = CreateSensor(
     name = "kWh Required Overnight",
     unique_id="kwh_required_overnight_python",
+    unit_of_measurement="kWh"
+)
+
+kwh_required_till_sundown_sensor = CreateSensor(
+    name = "kWh Till Sundown",
+    unique_id="kwh_required_till_sundown_python",
     unit_of_measurement="kWh"
 )
 
@@ -180,9 +187,10 @@ def initalise_entities():
     effective_price_sensor.set_state(0)
     base_load_sensor.set_state(0)
     avg_daily_load_sensor.set_state(0)
+    kwh_required_till_sundown_sensor.set_state(0)
     time.sleep(10)
 
 #initalise_entities()
 
-#avg_daily_load_sensor.set_state(0)
+#kwh_required_till_sundown_sensor.set_state(0)
 #time.sleep(10)

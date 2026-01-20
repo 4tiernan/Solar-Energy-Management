@@ -74,7 +74,6 @@ class EnergyController():
             grid_export=self.plant.max_export_power,
             grid_import=0)
 
-
     def self_consumption(self):
         self.working_mode = "Self Consumption"
         self.plant.check_control_limits(
@@ -91,6 +90,7 @@ class EnergyController():
         self.feedIn_price = amber_data.feedIn_price
         self.solar_kwh_forecast_remaining = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer_percentage=self.buffer_percentage_remaining)
+        self.kwh_required_till_sundown = self.plant.kwh_required_till_sundown(buffer_percentage=self.buffer_percentage_remaining)
 
         self.kwh_energy_available = self.plant.kwh_stored_available
         
@@ -99,8 +99,7 @@ class EnergyController():
         self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2),0)].price # get the number of 30 minute periods that the battery is allowed to discharge to
         self.target_dispatch_price = ((100-self.target_price_reduction_percentage)/100.0) * self.target_dispatch_price # Slightly reduce the target dispatch price to capture more events that are still valuable given forecast uncertanty 
         self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE)) 
-        #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")
-        
+        #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")     
 
     def print_values(self, amber_data):
         print("...")
@@ -116,7 +115,7 @@ class EnergyController():
                      self.kwh_energy_available > self.kwh_required_remaining + 1)
         
         elif(mode == "Exporting All Solar"):
-            return (self.solar_kwh_forecast_remaining + self.kwh_energy_available >= self.kwh_required_remaining + self.plant.kwh_till_full + 11 and
+            return (self.solar_kwh_forecast_remaining + self.kwh_energy_available >= self.kwh_required_till_sundown + self.plant.kwh_till_full + 11 and
                      self.feedIn_price >= 2 and self.plant.solar_daytime)
         
         elif(mode == "Exporting Excess Solar"):
@@ -134,7 +133,7 @@ class EnergyController():
                      self.kwh_energy_available <= self.kwh_required_remaining)
         
         elif(mode == "Exporting All Solar"):
-            return (self.solar_kwh_forecast_remaining + self.kwh_energy_available < self.kwh_required_remaining + self.plant.kwh_till_full + 10 or
+            return (self.solar_kwh_forecast_remaining + self.kwh_energy_available < self.kwh_required_till_sundown + self.plant.kwh_till_full + 10 or
                      self.feedIn_price < 2 or not self.plant.solar_daytime)
         
         elif(mode == "Exporting Excess Solar"):
