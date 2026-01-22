@@ -108,8 +108,13 @@ class MPC:
         constraints += [soc[0] == self.soc_init] # Set the inital soc 
         constraints += [soc[-1] == min(self.soc_max*0.99, self.soc_init)] # Set the final soc to be close to the starting soc but limit to ensure possibility
 
-        #self.prices_sell[10:12] = -0.01 # Allow testing of various pricings
-        #self.prices_buy[10:12] = 0.03
+        self.prices_sell[250:270] = -0.30 # Allow testing of various pricings
+        self.prices_buy[250:270] = -0.20
+
+        self.prices_sell[100:150] = 0.50 # Allow testing of various pricings
+        self.prices_buy[100:150] = 0.70
+
+
 
         #zero_price_mask = (self.prices_sell == 0).astype(float) # Represents when prices are zero
 
@@ -180,7 +185,7 @@ class MPC:
         
         else: # Sim successfull 
             # ---------- Results ----------
-            battery_power = (p_charge.value - p_discharge.value).tolist()
+            battery_power = (p_discharge.value - p_charge.value).tolist()
             grid_net = (grid_import.value - grid_export.value).tolist()
             #hours = np.arange(int(self.N_5min)) * self.dt_5min
 
