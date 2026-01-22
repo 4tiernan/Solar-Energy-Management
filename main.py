@@ -105,7 +105,7 @@ def update_sensors(amber_data):
     ha_mqtt.kwh_discharged_sensor.set_state(round(plant.kwh_till_full, 2))
     ha_mqtt.kwh_remaining_sensor.set_state(round(plant.kwh_stored_available, 2))
     ha_mqtt.target_discharge_sensor.set_state(round(EC.target_dispatch_price))
-    ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))
+    ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))    
     ha_mqtt.kwh_required_till_sundown_sensor.set_state(round(EC.kwh_required_till_sundown, 2))
     ha_mqtt.amber_api_calls_remaining_sensor.set_state(amber.rate_limit_remaining)
     ha_mqtt.working_mode_sensor.set_state(EC.working_mode)
@@ -113,7 +113,7 @@ def update_sensors(amber_data):
     profit = ha.get_numeric_state("sensor.daily_feed_in")
     cost = ha.get_numeric_state("sensor.daily_general_usage")
     ha_mqtt.system_state_sensor.set_state(EC.working_mode + f" {round(grid_export_power,1)}@{amber_data.feedIn_price} c/kWh ${round(profit-cost,2)} profit")
-    ha_mqtt.base_load_sensor.set_state(1000*plant.get_base_load_estimate()) # converted to w from kW
+    ha_mqtt.base_load_sensor.set_state(round(1000*plant.get_base_load_estimate(),2)) # converted to w from kW
     ha_mqtt.effective_price_sensor.set_state(determine_effective_price(amber_data)) 
     ha_mqtt.avg_daily_load_sensor.set_state(round(plant.avg_daily_load,2))
 
