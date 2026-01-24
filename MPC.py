@@ -41,7 +41,7 @@ class MPC:
         self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
         self.grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
         self.battery_low_energy_threshold = 5 # kWh
-        self.battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
+        self.battery_low_energy_penalty_cost = 0.01 # $/kWh 0.03-0.05 is ok
         self.solar_curtailment_penalty = 0.0001  # $/kWh just enough to encorage use of the solar
        
     def update_limits(self):
@@ -108,11 +108,11 @@ class MPC:
         constraints += [soc[0] == self.soc_init] # Set the inital soc 
         constraints += [soc[-1] == min(self.soc_max*0.99, self.soc_init)] # Set the final soc to be close to the starting soc but limit to ensure possibility
 
-        self.prices_sell[250:270] = -0.30 # Allow testing of various pricings
-        self.prices_buy[250:270] = -0.20
+        #self.prices_sell[250:270] = -0.30 # Allow testing of various pricings
+        #self.prices_buy[250:270] = -0.20
 
-        self.prices_sell[100:150] = 0.50 # Allow testing of various pricings
-        self.prices_buy[100:150] = 0.70
+        #self.prices_sell[100:150] = 0.50 # Allow testing of various pricings
+        #self.prices_buy[100:150] = 0.70
 
 
 
