@@ -1,27 +1,28 @@
+from enum import Enum
+from dataclasses import dataclass
+
+class ControlMode(Enum):
+    SELF_CONSUMPTION = "Self Consumption"
+    EXPORT_EXCESS_SOLAR = "Exporting Excess Solar"
+    EXPORT_ALL_SOLAR = "Exporting All Solar"
+    DISPATCH = "Dispatching"
+    GRID_IMPORT = "Grid Import"
+
 class EnergyController():
     def __init__(self, ha, ha_mqtt, plant, rbc):
         self.ha = ha
         self.ha_mqtt = ha_mqtt
         self.plant = plant
-        self.rbc = rbc
-
-        self.MODES = [
-            "Dispatching",
-            "Exporting All Solar",
-            "Exporting Excess Solar",
-            "Self Consumption"
-        ]
+        self.rbc = rbc        
         
-        self.working_mode = "Self Consumption"
-
-        self.last_control_mode = self.plant.get_plant_mode()
+        self.working_mode = ControlMode.SELF_CONSUMPTION
 
         #Self consume on startup for saftey if auto control on
         if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
             self.self_consumption()
                 
     def dispatch(self):
-        self.working_mode = "Dispatching"
+        self.working_mode = ControlMode.DISPATCH
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Command Discharging (PV First)",
@@ -32,7 +33,7 @@ class EnergyController():
             grid_import=0)
         
     def export_all_solar(self):
-        self.working_mode = "Exporting All Solar"
+        self.working_mode = ControlMode.EXPORT_ALL_SOLAR
 
         solar_buffer = 2 # Buffer to ensure load is covered by battery or solar
         if(self.plant.load_power + solar_buffer < self.plant.solar_kw): # Let the battery charge with excess DC power available
@@ -55,7 +56,7 @@ class EnergyController():
                 grid_import=0)
 
     def export_excess_solar(self):
-        self.working_mode = "Exporting Excess Solar"
+        self.working_mode = ControlMode.EXPORT_EXCESS_SOLAR
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Maximum Self Consumption",
@@ -65,14 +66,16 @@ class EnergyController():
             grid_export=self.plant.max_export_power,
             grid_import=0)
 
-    def self_consumption(self):
-        self.working_mode = "Self Consumption"
+    def self_consumption(self, pv_limit = None):
+        if(pv_limit == None):
+            pv_limit = self.plant.max_pv_power
+        self.working_mode = ControlMode.SELF_CONSUMPTION
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Maximum Self Consumption",
             discharge=self.plant.max_discharge_power,
             charge=self.plant.max_charge_power,
-            pv=self.plant.max_pv_power,
+            pv=pv_limit,
             grid_export=0,
             grid_import=0)
 
@@ -85,18 +88,8 @@ class EnergyController():
 
         self.mainain_control_mode()
 
-    def mainain_control_mode(self):
+    def mainain_control_mode(self): # Maintain the current control mode (mainly export all solar)
         self.plant.update_data()
-        if(self.working_mode == "Self Consumption"):
-            self.self_consumption()
-        elif(self.working_mode == "Exporting Excess Solar"):  
-            self.export_excess_solar()        
-        elif(self.working_mode == "Exporting All Solar"):
+        if(self.control_state.mode == ControlMode.EXPORT_ALL_SOLAR):
             self.export_all_solar()
-        elif(self.working_mode == "Dispatching"):
-            self.dispatch()
-        else:
-            self.self_consumption()
-            raise(f"Error, control mode {self.working_mode} not defined. Defaulting to self consumption.")
-            
                 

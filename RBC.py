@@ -1,14 +1,16 @@
+from energy_controller import ControlMode
+
 class RBC():    
     def __init__(self, ha, ha_mqtt, plant, buffer_percentage_remaining=35, max_discharge_rate = 15):
         self.ha = ha
         self.ha_mqtt = ha_mqtt
         self.plant = plant
-
+        
         self.MODES = [
-            "Dispatching",
-            "Exporting All Solar",
-            "Exporting Excess Solar",
-            "Self Consumption"
+            ControlMode.DISPATCH,
+            ControlMode.EXPORT_ALL_SOLAR,
+            ControlMode.EXPORT_EXCESS_SOLAR,
+            ControlMode.SELF_CONSUMPTION
         ]
 
         self.feedIn_price = 0
@@ -20,7 +22,7 @@ class RBC():
         self.max_discharge_rate = max_discharge_rate
         self.hrs_of_discharge_available = 2
         self.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value #minimum price that is worth dispatching the battery for
-        self.working_mode = "Self Consumption"
+        self.working_mode = ControlMode.SELF_CONSUMPTION
         self.target_price_reduction_percentage = 10 # Percentage reduction of ideal sell price to sell at (Assumes the max price won't occour)
 
         self.last_control_mode = self.plant.get_plant_mode()
@@ -43,36 +45,36 @@ class RBC():
         #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")     
 
     def can_enter_mode(self, mode):
-        if(mode == "Dispatching"):
+        if(mode == ControlMode.DISPATCH):
             return (self.feedIn_price >= self.target_dispatch_price and
                      self.kwh_energy_available > self.kwh_required_remaining + 1)
         
-        elif(mode == "Exporting All Solar"):
+        elif(mode == ControlMode.EXPORT_ALL_SOLAR):
             return (self.solar_kwh_forecast_remaining + self.kwh_energy_available >= self.kwh_required_till_sundown + self.plant.kwh_till_full + 11 and
                      self.feedIn_price >= 2 and self.plant.solar_daytime)
         
-        elif(mode == "Exporting Excess Solar"):
+        elif(mode == ControlMode.EXPORT_EXCESS_SOLAR):
             return (self.feedIn_price >= 0)
         
-        elif(mode == "Self Consumption"):
+        elif(mode == ControlMode.SELF_CONSUMPTION):
             return True
         
         else:
             raise(f"Error, mode '{mode}' is unknown")
         
     def should_exit(self, mode):
-        if(mode == "Dispatching"):
+        if(mode == ControlMode.DISPATCH):
             return (self.feedIn_price < self.target_dispatch_price or
                      self.kwh_energy_available <= self.kwh_required_remaining)
         
-        elif(mode == "Exporting All Solar"):
+        elif(mode == ControlMode.EXPORT_ALL_SOLAR):
             return (self.solar_kwh_forecast_remaining + self.kwh_energy_available < self.kwh_required_till_sundown + self.plant.kwh_till_full + 10 or
                      self.feedIn_price < 2 or not self.plant.solar_daytime)
         
-        elif(mode == "Exporting Excess Solar"):
+        elif(mode == ControlMode.EXPORT_EXCESS_SOLAR):
             return (self.feedIn_price < 0)
         
-        elif(mode == "Self Consumption"): # No need to exit lowest mode unless another mode can be active
+        elif(mode == ControlMode.SELF_CONSUMPTION): # No need to exit lowest mode unless another mode can be active
             return False
             
         else:

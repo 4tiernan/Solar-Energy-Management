@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pytz
 import matplotlib.dates as mdates
 import time
+from energy_controller import ControlMode
 
 class MPC:
     def __init__(self, amber, plant, ha):
@@ -14,25 +15,22 @@ class MPC:
         self.plant = plant
         self.ha = ha
 
-        self.update_limits()    # Update limits that are fixed (some are required for config)
+        self.power_threshold = 0.2 # Threshold when comparing power values
 
-        # -------------------------------
-        # Config
-        # -------------------------------
+        self.update_limits()    # Update fixed limits (some are required for config)
 
+        # ---------- Config ----------
         self.forecast_hrs = 24
-        self.dt_30min = 30   # minutes
-        self.dt_5min   = 5    # minutes
-        self.steps_per_price = self.dt_30min // self.dt_5min  # = 6
-        self.steps_per_hr = 60 // self.dt_5min
+        self.steps_per_price = 30 // 5  # = 6
+        self.steps_per_hr = 60 // 5
 
-        self.N_30min = self.forecast_hrs * (60 // self.dt_30min) # forecast hours, 5-min timesteps
-        self.N_5min = self.forecast_hrs * (60 // self.dt_5min)
+        self.N_30min = self.forecast_hrs * (60 // 30) # forecast hours, 5-min timesteps
+        self.N_5min = self.forecast_hrs * (60 // 5)
         self.amber_forecast_30min_intervals = (60//30)*12    # Get the max 12hr forecast
         self.amber_past_30min_intervals = self.N_30min - self.amber_forecast_30min_intervals  # Fill the rest of the sim with past prices
         self.amber_5min_intervals = (60//5)*12
 
-        self.dt_5min = self.dt_5min/60      # 5 minutes in hours
+        self.dt_5min = 5/60      # 5 minutes in hours
 
         # Battery Settings
         self.soc_min = 0.0 * self.battery_capacity
@@ -78,10 +76,10 @@ class MPC:
         self.prices_buy = np.array(general_price_forecast) / 100      # buy price in $ from cents
         self.prices_sell  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
 
-    def run_optimisation(self):
+    def run_optimisation(self, amber_data):
         self.update_values()
 
-        self.prices_sell = self.prices_sell - 0.0001
+        self.prices_sell = self.prices_sell - 0.0001 # Not sure what this is for
 
         start = time.time()
         # ----------- Variables -----------
@@ -113,8 +111,6 @@ class MPC:
 
         #self.prices_sell[100:150] = 0.50 # Allow testing of various pricings
         #self.prices_buy[100:150] = 0.70
-
-
 
         #zero_price_mask = (self.prices_sell == 0).astype(float) # Represents when prices are zero
 
@@ -228,6 +224,39 @@ class MPC:
             return [self.convert_to_python(v) for v in obj]
         return obj
     
+    def determine_control_mode(self, output):
+        inverter_power = output["inverter_power"][0]
+        solar_power = output["solar_used"][0]
+        load_power = output["load"][0]
+        grid_net = output["grid_net"][0]
+        battery_power = output["battery_power"][0]
+
+        if(approx_equal(inverter_power, solar_power) or (approx_equal(inverter_power, self.plant.max_inverter_power) and solar_power > self.plant.max_inverter_power)):
+            self.EC.export_all_solar() # Export if all solar is being exported or > max inverter and charging bat with excess
+        
+        elif(approx_equal(inverter_power, load_power)):
+            return self.EC.self_consumption(pv_limit = )
+        
+        elif(inverter_power > solar_power + self.power_threshold and inverter_power > load_power + self.power_threshold):
+            return self.EC.dispatch(grid_export_limit = abs(grid_net))
+        
+        elif(grid_net < -self.power_threshold and solar_power > inverter_power + self.power_threshold):
+            return self.EC.export_excess_solar(grid_export_limit = abs(grid_net))
+        
+        elif(approx_equal(grid_net, load_power)):
+            return self.EC.import_power(battery_charge_limit = 0)
+        
+        elif(inverter_power < 0 and battery_power charging):
+            return self.EC.import_power(battery_charge_limit = abs(battery_power))
+
+        error no mode selected
+        return ControlMode.SELF_CONSUMPTION
+
+    def run(self, amber_data):
+        output = self.run_optimisation(self, amber_data)
+        control_mode = self.determine_control_mode(output)
+        return output, control_mode
+
     def display_results(self, output):
         print(f"Profit: ${round(output['profit'], 2)}")
         #print(f"Solar Remaining {np.sum(solar_5min*(5/60))}")
@@ -249,8 +278,6 @@ class MPC:
         plt.title('Battery Schedule & Net Load with 24h Amber Forecast and Discharge Cost')
         plt.legend()
         plt.grid(True)
-
-
 
         # Secondary y-axis for prices
         plt.twinx()
@@ -280,6 +307,8 @@ class MPC:
         plt.tight_layout()
         plt.show()
 
+def approx_equal(a, b, threshold = 0.2):
+    return abs(a-b) < threshold
 '''
 from amber_api import AmberAPI  
 from ha_api import HomeAssistantAPI
