@@ -1,4 +1,4 @@
-class RPC():    
+class RBC():    
     def __init__(self, ha, ha_mqtt, plant, buffer_percentage_remaining=35, max_discharge_rate = 15):
         self.ha = ha
         self.ha_mqtt = ha_mqtt
@@ -27,6 +27,7 @@ class RPC():
 
     def update_values(self, amber_data):
         self.plant.update_data()
+        self.MINIMUM_BATTERY_DISPATCH_PRICE = self.ha_mqtt.min_dispatch_price_number.value
         self.feedIn_price = amber_data.feedIn_price
         self.solar_kwh_forecast_remaining = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
         self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer_percentage=self.buffer_percentage_remaining)
@@ -101,6 +102,7 @@ class RPC():
         self.update_values(amber_data)
         return self.select_mode()
 
+'''
 from ha_api import HomeAssistantAPI
 from amber_api import AmberAPI
 import PlantControl
@@ -114,5 +116,6 @@ ha = HomeAssistantAPI(
     token=HA_TOKEN,
     errors=True
 )
-rpc = RPC(ha, ha_mqtt, plant)
-print(rpc.run(amber_data))
+rbc = RBC(ha, ha_mqtt, plant)
+print(rbc.run(amber_data))
+'''

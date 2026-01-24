@@ -23,6 +23,7 @@ def PrintError(e):
 
 while(started == False):
     try:
+        from RBC import RBC
         from energy_controller import EnergyController
         from ha_api import HomeAssistantAPI
         import ha_mqtt
@@ -45,11 +46,18 @@ while(started == False):
 
         ha_mqtt.controller_update_selector.set_state("Working")
 
+        rbc = RBC(
+            ha=ha, 
+            ha_mqtt=ha_mqtt,
+            plant=plant, 
+            buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
+        )
+
         EC = EnergyController(
             ha=ha,
             ha_mqtt=ha_mqtt,
             plant=plant,
-            buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
+            rbc=rbc
         )
 
         started = True
@@ -69,9 +77,9 @@ amber_data = amber.get_data()
 def determine_effective_price(amber_data):
     general_price = amber_data.general_price
     feedIn_price = amber_data.feedIn_price
-    target_dispatch_price = EC.target_dispatch_price
+    target_dispatch_price = rbc.target_dispatch_price
     remaining_solar_today = plant.solar_kw_remaining_today
-    forecast_load_till_morning = EC.kwh_required_remaining
+    forecast_load_till_morning = rbc.kwh_required_remaining
 
     base_load = plant.get_base_load_estimate() # kW estimated base load
     solar_daytime = plant.solar_daytime # If producing more power than base load consider it during the solar day
@@ -94,19 +102,25 @@ def determine_effective_price(amber_data):
             return effective_dispatch_price
         else:
             return general_price # default to the general price
-
+        
+def print_values(amber_data):
+    print("....")
+    print(f"Feed In: {amber_data.feedIn_price} c/kWh")
+    print(f"Max 12hr Feed In: {amber_data.feedIn_max_forecast_price} c/kWh")
+    print(f"General: {amber_data.general_price} c/kWh")
+    
 
 # Update HA MQTT sensors
 def update_sensors(amber_data):
-    EC.update_values(amber_data=amber_data)
+    rbc.update_values(amber_data=amber_data)
     ha_mqtt.max_feedIn_sensor.set_state(round(amber_data.feedIn_max_forecast_price))
     ha_mqtt.current_feedIn_sensor.set_state(round(amber_data.feedIn_price))
     ha_mqtt.current_general_price_sensor.set_state(round(amber_data.general_price))
     ha_mqtt.kwh_discharged_sensor.set_state(round(plant.kwh_till_full, 2))
     ha_mqtt.kwh_remaining_sensor.set_state(round(plant.kwh_stored_available, 2))
-    ha_mqtt.target_discharge_sensor.set_state(round(EC.target_dispatch_price))
-    ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))    
-    ha_mqtt.kwh_required_till_sundown_sensor.set_state(round(EC.kwh_required_till_sundown, 2))
+    ha_mqtt.target_discharge_sensor.set_state(round(rbc.target_dispatch_price))
+    ha_mqtt.kwh_required_overnight_sensor.set_state(round(rbc.kwh_required_remaining, 2))    
+    ha_mqtt.kwh_required_till_sundown_sensor.set_state(round(rbc.kwh_required_till_sundown, 2))
     ha_mqtt.amber_api_calls_remaining_sensor.set_state(amber.rate_limit_remaining)
     ha_mqtt.working_mode_sensor.set_state(EC.working_mode)
     grid_export_power = round(ha.get_numeric_state("sensor.sigen_plant_grid_export_power"), 2)
@@ -117,7 +131,7 @@ def update_sensors(amber_data):
     ha_mqtt.effective_price_sensor.set_state(determine_effective_price(amber_data)) 
     ha_mqtt.avg_daily_load_sensor.set_state(round(plant.avg_daily_load,2))
 
-    EC.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value
+    
 
 update_sensors(amber_data)
 time.sleep(1)
@@ -133,32 +147,32 @@ def main_loop_code():
         else:
             amber_data = amber.get_data()
 
-        if(amber_data.prices_estimated):
-            seconds_till_next_update = 10
+        if(amber_data.prices_estimated): # If prices are estimated, don't use them
+            seconds_till_next_update = 5
             partial_update = True # Make the next update a partial one
-        else:
+        else: # If prices are real, use them
             partial_update = False
-            real_price_offset = 20 # seconds after the period begins when the real price starts
+            real_price_offset = 30 # seconds after the period begins when the real price starts
             now_datetime = datetime.datetime.now()
             seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
-    
+            print_values(amber_data) # Print the new latest prices
+
             if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
                 automatic_control = True
-                EC.print_values(amber_data)
                 
-
         print(f"Partial Update: {partial_update}")
         print(f"Seconds till next update: {seconds_till_next_update}")
         next_amber_update_timestamp = time.time() + seconds_till_next_update
 
     update_sensors(amber_data)
 
+    # If auto control is on, run the energy controller (every 2 seconds as we need to keep track of some things)
     if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
         automatic_control = True
-        EC.run(amber_data=amber_data) # Run the energy controller (every 2 seconds as we need to keep track of some things)
+        EC.run(amber_data=amber_data) 
 
-        
 
+    # If Auto control is off, send a notification warning so
     if(ha.get_state("input_select.automatic_control_mode")["state"] != "On"):
         if(automatic_control == True):
             #EC.self_consumption()
@@ -166,10 +180,10 @@ def main_loop_code():
             print(f"Automatic Control turned off.")
             ha.send_notification(f"Automatic Control turned off", "Self Consuming", "mobile_app_pixel_10_pro")
 
+    # If Auto control has been TURNED on, print a msg and reset flag
     elif(ha.get_state("input_select.automatic_control_mode")["state"] == "On" and automatic_control == False):
-                automatic_control = True
-                print(f"Automatic Control turned on.")
-                EC.run(amber_data=amber_data)
+        automatic_control = True
+        print(f"Automatic Control turned on.")
                 
             
     
