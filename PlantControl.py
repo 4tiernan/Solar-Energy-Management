@@ -380,6 +380,10 @@ class Plant:
     def kwh_required_remaining(self, buffer_percentage=20):
         forecast_kwh = self.forecast_consumption_amount(forecast_till_time=datetime.time(6, 0, 0))
         return max(forecast_kwh, 0) * (1 + (buffer_percentage/100)) + 2
+    
+    def kwh_required_till_sundown(self, buffer_percentage=20):
+        forecast_kwh = self.forecast_consumption_amount(forecast_till_time=datetime.time(18, 0, 0))
+        return max(forecast_kwh, 0) * (1 + (buffer_percentage/100)) + 2
         
     def round_minutes(self, time, nearest_minute):
         return time.replace(

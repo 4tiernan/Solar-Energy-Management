@@ -28,34 +28,34 @@ while(started == False):
         import ha_mqtt
         from amber_api import AmberAPI
         import PlantControl
+
+        amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
+        amber_data = amber.get_data()
+        last_amber_update_timestamp = time.time()
+
+        plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
+
+        ha = HomeAssistantAPI(
+            base_url=HA_URL,
+            token=HA_TOKEN,
+            errors=True
+        )
+        if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+            ha.set_switch_state("switch.sigen_plant_remote_ems_controled_by_home_assistant", True)
+
+        ha_mqtt.controller_update_selector.set_state("Working")
+
+        EC = EnergyController(
+            ha=ha,
+            ha_mqtt=ha_mqtt,
+            plant=plant,
+            buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
+        )
+
         started = True
     except Exception as e:
         PrintError(e)
         
-
-try: 
-    amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
-    amber_data = amber.get_data()
-    last_amber_update_timestamp = time.time()
-
-    plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
-
-    ha = HomeAssistantAPI(
-        base_url=HA_URL,
-        token=HA_TOKEN,
-        errors=True
-    )
-    ha_mqtt.controller_update_selector.set_state("Working")
-
-    EC = EnergyController(
-        ha=ha,
-        ha_mqtt=ha_mqtt,
-        plant=plant,
-        buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
-    )
-
-except Exception as e:
-    PrintError(e)
 
 
 start_time = time.time()
@@ -105,14 +105,15 @@ def update_sensors(amber_data):
     ha_mqtt.kwh_discharged_sensor.set_state(round(plant.kwh_till_full, 2))
     ha_mqtt.kwh_remaining_sensor.set_state(round(plant.kwh_stored_available, 2))
     ha_mqtt.target_discharge_sensor.set_state(round(EC.target_dispatch_price))
-    ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))
+    ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))    
+    ha_mqtt.kwh_required_till_sundown_sensor.set_state(round(EC.kwh_required_till_sundown, 2))
     ha_mqtt.amber_api_calls_remaining_sensor.set_state(amber.rate_limit_remaining)
     ha_mqtt.working_mode_sensor.set_state(EC.working_mode)
     grid_export_power = round(ha.get_numeric_state("sensor.sigen_plant_grid_export_power"), 2)
     profit = ha.get_numeric_state("sensor.daily_feed_in")
     cost = ha.get_numeric_state("sensor.daily_general_usage")
-    ha_mqtt.system_state_sensor.set_state(EC.working_mode + f" {grid_export_power}@{amber_data.feedIn_price} c/kWh ${round(profit-cost,2)} profit")
-    ha_mqtt.base_load_sensor.set_state(1000*plant.get_base_load_estimate()) # converted to w from kW
+    ha_mqtt.system_state_sensor.set_state(EC.working_mode + f" {round(grid_export_power,1)}@{amber_data.feedIn_price} c/kWh ${round(profit-cost,2)} profit")
+    ha_mqtt.base_load_sensor.set_state(round(1000*plant.get_base_load_estimate(),2)) # converted to w from kW
     ha_mqtt.effective_price_sensor.set_state(determine_effective_price(amber_data)) 
     ha_mqtt.avg_daily_load_sensor.set_state(round(plant.avg_daily_load,2))
 
