@@ -10,13 +10,13 @@ class ControlMode(Enum):
     SOLAR_TO_LOAD = "Solar To Load"
 
 class EnergyController():
-    def __init__(self, ha, ha_mqtt, plant, rbc):
+    def __init__(self, ha, ha_mqtt, plant):
         self.ha = ha
         self.ha_mqtt = ha_mqtt
         self.plant = plant
-        self.rbc = rbc        
-        
-        self.working_mode = ControlMode.SELF_CONSUMPTION
+
+        self.working_mode = ControlMode.SELF_CONSUMPTION.value
+        self.last_working_mode = None
 
         #Self consume on startup for saftey if auto control on
         if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
@@ -28,7 +28,7 @@ class EnergyController():
         else:
             grid_export_limit = min(max(grid_export_limit, 0), self.plant.max_export_power)
 
-        self.working_mode = ControlMode.DISPATCH
+        self.working_mode = ControlMode.DISPATCH.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Command Discharging (PV First)",
@@ -39,7 +39,7 @@ class EnergyController():
             grid_import=0)
         
     def export_all_solar(self):
-        self.working_mode = ControlMode.EXPORT_ALL_SOLAR
+        self.working_mode = ControlMode.EXPORT_ALL_SOLAR.value
 
         solar_buffer = 2 # Buffer to ensure load is covered by battery or solar
         if(self.plant.load_power + solar_buffer < self.plant.solar_kw): # Let the battery charge with excess DC power available
@@ -66,7 +66,7 @@ class EnergyController():
             grid_export_limit = self.plant.max_export_power
         else:
             grid_export_limit = min(max(grid_export_limit, 0), self.plant.max_export_power)
-        self.working_mode = ControlMode.EXPORT_EXCESS_SOLAR
+        self.working_mode = ControlMode.EXPORT_EXCESS_SOLAR.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Maximum Self Consumption",
@@ -77,7 +77,7 @@ class EnergyController():
             grid_import=0)
         
     def solar_to_load(self):
-        self.working_mode = ControlMode.SOLAR_TO_LOAD
+        self.working_mode = ControlMode.SOLAR_TO_LOAD.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Command Charging (PV First)",
@@ -98,7 +98,7 @@ class EnergyController():
         else:
             pv_limit = min(max(pv_limit, 0), self.plant.max_pv_power)
 
-        self.working_mode = ControlMode.GRID_IMPORT
+        self.working_mode = ControlMode.GRID_IMPORT.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Command Charging (PV First)",
@@ -112,7 +112,7 @@ class EnergyController():
     def self_consumption(self, pv_limit = None):
         if(pv_limit == None):
             pv_limit = self.plant.max_pv_power
-        self.working_mode = ControlMode.SELF_CONSUMPTION
+        self.working_mode = ControlMode.SELF_CONSUMPTION.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Maximum Self Consumption",
@@ -121,18 +121,23 @@ class EnergyController():
             pv=pv_limit,
             grid_export=0,
             grid_import=0)
+    
+    def print_values(self, amber_data):
+        print("...")
+        print(f"kWh Drained: {round(self.plant.kwh_till_full, 2)} kWh")
+        print(f"kWh Energy Available: {round(self.plant.kwh_stored_available, 2)} kWh")
+        print(f"Current FeedIn Price: {amber_data.feedIn_price} c/kWh")
+        print(f"Max Forecasted FeedIn Price: {amber_data.feedIn_max_forecast_price} c/kWh")
 
     def run(self, amber_data):
-        last_working_mode = self.working_mode
-        self.working_mode = self.rbc.run(amber_data)
-
-        if(last_working_mode != self.working_mode):
+        if(self.last_working_mode != self.working_mode): 
             self.print_values(amber_data)
+        self.last_working_mode = self.working_mode
 
         self.mainain_control_mode()
 
     def mainain_control_mode(self): # Maintain the current control mode (mainly export all solar)
         self.plant.update_data()
-        if(self.control_state.mode == ControlMode.EXPORT_ALL_SOLAR):
+        if(self.working_mode == ControlMode.EXPORT_ALL_SOLAR.value):
             self.export_all_solar()
                 

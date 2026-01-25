@@ -316,6 +316,7 @@ class MPC:
 def approx_equal(a, b, threshold = 0.2):
     return abs(a-b) < threshold
 
+'''
 from amber_api import AmberAPI  
 from ha_api import HomeAssistantAPI
 import ha_mqtt
@@ -353,3 +354,4 @@ amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
 output = mpc.run_optimisation(amber_data)
 mpc.determine_control_mode(output)
 #mpc.display_results(output)
+'''

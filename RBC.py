@@ -1,10 +1,11 @@
 from energy_controller import ControlMode
 
 class RBC():    
-    def __init__(self, ha, ha_mqtt, plant, buffer_percentage_remaining=35, max_discharge_rate = 15):
+    def __init__(self, ha, ha_mqtt, plant, EC, buffer_percentage_remaining=35, max_discharge_rate = 15):
         self.ha = ha
         self.ha_mqtt = ha_mqtt
         self.plant = plant
+        self.EC = EC
         
         self.MODES = [
             ControlMode.DISPATCH,
@@ -102,7 +103,16 @@ class RBC():
     
     def run(self, amber_data):
         self.update_values(amber_data)
-        return self.select_mode()
+        selected_mode = self.select_mode()
+        if(selected_mode == ControlMode.DISPATCH):
+            self.EC.dispatch()
+        elif(selected_mode == ControlMode.EXPORT_ALL_SOLAR):
+            self.EC.export_all_solar()
+        elif(selected_mode == ControlMode.EXPORT_EXCESS_SOLAR):
+            self.EC.export_excess_solar()
+        elif(selected_mode == ControlMode.SELF_CONSUMPTION):
+            self.EC.self_consumption()
+         
 
 '''
 from ha_api import HomeAssistantAPI

@@ -46,24 +46,25 @@ while(started == False):
 
         ha_mqtt.controller_update_selector.set_state("Working")
 
+        EC = EnergyController(
+            ha=ha,
+            ha_mqtt=ha_mqtt,
+            plant=plant
+        )
+
         rbc = RBC(
             ha=ha, 
             ha_mqtt=ha_mqtt,
             plant=plant, 
+            EC=EC,
             buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
         )
 
         mpc = MPC(
             ha=ha,
-            plant=plant
-        )
-
-        EC = EnergyController(
-            ha=ha,
-            ha_mqtt=ha_mqtt,
             plant=plant,
-            rbc=rbc
-        )
+            EC=EC
+        )       
 
         started = True
     except Exception as e:
@@ -79,6 +80,7 @@ next_amber_update_timestamp = time.time() #time to run the next amber update
 partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
 last_amber_update_timestamp = time.time()
 amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
+last_control_mode = None
 
 def determine_effective_price(amber_data):
     general_price = amber_data.general_price
@@ -162,20 +164,32 @@ def main_loop_code():
             now_datetime = datetime.datetime.now()
             seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
             print_values(amber_data) # Print the new latest prices
-
-            if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+            
+            # Only run MPC every price update
+            if(ha.get_state("input_select.automatic_control_mode")["state"] == "On" and ha_mqtt.energy_controller_selector.state == "MPC"):
                 automatic_control = True
+                mpc.run(amber_data)
+                EC.run(amber_data=amber_data) 
+                print(f"MPC ran")
                 
         print(f"Partial Update: {partial_update}")
         print(f"Seconds till next update: {seconds_till_next_update}")
         next_amber_update_timestamp = time.time() + seconds_till_next_update
 
-    update_sensors(amber_data)
-
     # If auto control is on, run the energy controller (every 2 seconds as we need to keep track of some things)
     if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+        EC.run(amber_data=amber_data)
         automatic_control = True
-        EC.run(amber_data=amber_data) 
+        if(ha_mqtt.energy_controller_selector.state == "RBC"):
+            rbc.run(amber_data) # RBC needs to run every 2 seconds
+            print(f"RBC, Working")
+        
+        # If the MPC selector was selected, run MPC before the next price update
+        if(last_control_mode != ha_mqtt.energy_controller_selector.state and ha_mqtt.energy_controller_selector.state == "MPC"):
+            mpc.run(amber_data)
+            last_control_mode = ha_mqtt.energy_controller_selector.state
+         
+    update_sensors(amber_data)
 
 
     # If Auto control is off, send a notification warning so
