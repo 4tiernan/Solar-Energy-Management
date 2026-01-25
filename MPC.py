@@ -9,6 +9,16 @@ import matplotlib.dates as mdates
 import time
 from energy_controller import ControlMode
 
+
+import json
+import paho.mqtt.client as mqtt
+from api_token_secrets import MQTT_HOST, MQTT_USER, MQTT_PASS
+
+mqtt_client = mqtt.Client()
+mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS) 
+mqtt_client.connect(MQTT_HOST, 1883)
+mqtt_client.loop_start()
+
 class MPC:
     def __init__(self, ha, plant, EC):
         self.plant = plant
@@ -261,6 +271,7 @@ class MPC:
     def run(self, amber_data):
         output = self.run_optimisation(amber_data)
         control_mode = self.determine_control_mode(output)
+        mqtt_client.publish("home/mpc/output", json.dumps(output), retain=True)
         return output, control_mode
 
     def display_results(self, output):

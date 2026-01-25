@@ -1,5 +1,8 @@
 import subprocess
 import sys
+import json
+import paho.mqtt.client as mqtt
+
 import time
 from amber_api import AmberAPI  
 from ha_api import HomeAssistantAPI
@@ -7,11 +10,9 @@ import PlantControl
 from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID, MQTT_HOST, MQTT_USER, MQTT_PASS
 from MPC import MPC
 
-import json
-import paho.mqtt.client as mqtt
 
 mqtt_client = mqtt.Client()
-mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)  # if required
+mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS) 
 mqtt_client.connect(MQTT_HOST, 1883)
 mqtt_client.loop_start()
 

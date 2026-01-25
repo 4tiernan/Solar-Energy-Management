@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import time
 import datetime
 import traceback
@@ -10,7 +12,6 @@ from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 # systemctl status energy-manager
 # source venv/bin/activate (from within cd opt/energy-manager)
 # nano /opt/energy-manager/run.sh
-
 
 print("Starting...")
 started = False
@@ -64,7 +65,21 @@ while(started == False):
             ha=ha,
             plant=plant,
             EC=EC
-        )       
+        )     
+
+        # Start Streamlit dashboard
+        streamlit_proc = subprocess.Popen([
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "webserver.py",
+            "--server.headless=true",
+            "--theme.base",
+            "light"
+        ])
+
+        print("Streamlit dashboard started")  
 
         started = True
     except Exception as e:
@@ -214,6 +229,12 @@ while True:
         time.sleep(2)
 
         ha_mqtt.alive_time_sensor.set_state(round(time.time()-start_time,1))
-        
+
+    except KeyboardInterrupt:
+        print("Shutting down...")
+        streamlit_proc.terminate()
+    
     except Exception as e:
         PrintError(e)
+
+    
