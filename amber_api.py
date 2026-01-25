@@ -22,6 +22,8 @@ class amber_data:
     feedIn_12hr_forecast: list[PriceForecast]
     general_12hr_forecast_sorted: list[PriceForecast]
     feedIn_12hr_forecast_sorted: list[PriceForecast]
+    general_extrapolated_forecast: list[float]
+    feedIn_extrapolated_forecast: list[float]
     
 
 
@@ -206,7 +208,7 @@ class AmberAPI:
 
         return [general_price, feed_in_price, estimate]
     
-    def get_data(self, partial_update=False):
+    def get_data(self, partial_update=False, forecast_hrs=None):
         [general_price, feed_in_price, estimate] = self.get_current_prices()
         
         if(self.data == None or partial_update == False):
@@ -222,10 +224,18 @@ class AmberAPI:
             feed_in_price_forecast = self.data.feedIn_12hr_forecast
             storted_general_forecast = self.data.general_12hr_forecast_sorted
             storted_feed_in_forecast = self.data.feedIn_12hr_forecast_sorted
+
+        
             
         if(estimate and self.data != None): # if prices are an estimate, just pass the old not estimated prices through
             general_price = self.data.general_price
             feed_in_price = self.data.feedIn_price
+
+        if((not estimate and forecast_hrs != None) or self.data == None):
+            [general_extrapolated_forecast, feedIn_extrapolated_forecast] = self.get_extrapolated_forecast(hours=forecast_hrs)
+        else:
+            general_extrapolated_forecast = self.data.general_extrapolated_forecast
+            feedIn_extrapolated_forecast = self.data.feedIn_extrapolated_forecast
 
         self.data = amber_data(
             general_price=round(general_price),
@@ -236,7 +246,9 @@ class AmberAPI:
             general_12hr_forecast=general_price_forecast,
             feedIn_12hr_forecast=feed_in_price_forecast,
             general_12hr_forecast_sorted=storted_general_forecast,
-            feedIn_12hr_forecast_sorted=storted_feed_in_forecast
+            feedIn_12hr_forecast_sorted=storted_feed_in_forecast,
+            general_extrapolated_forecast=general_extrapolated_forecast,
+            feedIn_extrapolated_forecast=feedIn_extrapolated_forecast
             )
         return self.data
       

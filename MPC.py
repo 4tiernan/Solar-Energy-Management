@@ -10,10 +10,10 @@ import time
 from energy_controller import ControlMode
 
 class MPC:
-    def __init__(self, amber, plant, ha):
-        self.amber = amber
+    def __init__(self, ha, plant, EC):
         self.plant = plant
         self.ha = ha
+        self.EC = EC
 
         self.power_threshold = 0.2 # Threshold when comparing power values
 
@@ -52,7 +52,7 @@ class MPC:
         self.grid_export_limit = self.plant.max_export_power    # kW (Grid export limit)      
 
     # Update any values or forecasts required to run the sim
-    def update_values(self, inject_real_values = True):        
+    def update_values(self, amber_data, inject_real_values = True):        
         self.soc_init = self.plant.kwh_stored_available
 
         # ---------- Forecasts ----------
@@ -69,15 +69,16 @@ class MPC:
             self.solar_5min[0] = self.plant.solar_kw
             self.load_5min[0] = self.plant.load_power
 
-        # Amber Forecast
-        [general_price_forecast, feed_in_price_forecast] = self.amber.get_extrapolated_forecast(hours=self.forecast_hrs)
+        # Amber Forecast (forecast hrs is set in main.py in the get_data call)
+        general_price_forecast = amber_data.general_extrapolated_forecast
+        feed_in_price_forecast = amber_data.feedIn_extrapolated_forecast
 
         # Convert to $/kWh
         self.prices_buy = np.array(general_price_forecast) / 100      # buy price in $ from cents
         self.prices_sell  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
 
     def run_optimisation(self, amber_data):
-        self.update_values()
+        self.update_values(amber_data)
 
         self.prices_sell = self.prices_sell - 0.0001 # Not sure what this is for
 
@@ -227,6 +228,7 @@ class MPC:
     def determine_control_mode(self, output):
         inverter_power = output["inverter_power"][0]
         solar_power = output["solar_used"][0]
+        solar_forecast = output["solar_forecast"][0]
         load_power = output["load"][0]
         grid_net = output["grid_net"][0]
         battery_power = output["battery_power"][0]
@@ -235,7 +237,10 @@ class MPC:
             self.EC.export_all_solar() # Export if all solar is being exported or > max inverter and charging bat with excess
         
         elif(approx_equal(inverter_power, load_power)):
-            return self.EC.self_consumption(pv_limit = )
+            if(battery_power < self.power_threshold): # If the battery is charging
+                return self.EC.self_consumption()
+            else:  
+                return self.EC.solar_to_load() # If battery is not charging, send solar straight to load
         
         elif(inverter_power > solar_power + self.power_threshold and inverter_power > load_power + self.power_threshold):
             return self.EC.dispatch(grid_export_limit = abs(grid_net))
@@ -246,11 +251,12 @@ class MPC:
         elif(approx_equal(grid_net, load_power)):
             return self.EC.import_power(battery_charge_limit = 0)
         
-        elif(inverter_power < 0 and battery_power charging):
-            return self.EC.import_power(battery_charge_limit = abs(battery_power))
+        elif(inverter_power < 0 and battery_power < self.power_threshold):
+            return self.EC.import_power(battery_charge_limit = abs(battery_power), pv_limit = solar_power)
 
-        error no mode selected
-        return ControlMode.SELF_CONSUMPTION
+        else:
+            self.EC.self_consumption()
+            raise Exception("Unable to determine control mode from MPC plan. Selected self consumption for saftey")
 
     def run(self, amber_data):
         output = self.run_optimisation(self, amber_data)
@@ -309,11 +315,14 @@ class MPC:
 
 def approx_equal(a, b, threshold = 0.2):
     return abs(a-b) < threshold
-'''
+
 from amber_api import AmberAPI  
 from ha_api import HomeAssistantAPI
+import ha_mqtt
+from energy_controller import EnergyController
 import PlantControl
 from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
+from RBC import RBC
 
 
 amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
@@ -324,7 +333,23 @@ ha = HomeAssistantAPI(
         token=HA_TOKEN,
         errors=True
     )
+rbc = RBC(
+    ha=ha, 
+    ha_mqtt=ha_mqtt,
+    plant=plant, 
+    buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
+)
+EC = EnergyController(
+    ha=ha,
+    ha_mqtt=ha_mqtt, 
+    plant=plant,
+    rbc=rbc
+)
 
-mpc = MPC(amber, plant, ha)
-mpc.display_results(mpc.run_optimisation())
-'''
+mpc = MPC(ha, plant, EC)
+
+amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
+
+output = mpc.run_optimisation(amber_data)
+mpc.determine_control_mode(output)
+#mpc.display_results(output)

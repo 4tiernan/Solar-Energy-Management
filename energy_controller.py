@@ -7,6 +7,7 @@ class ControlMode(Enum):
     EXPORT_ALL_SOLAR = "Exporting All Solar"
     DISPATCH = "Dispatching"
     GRID_IMPORT = "Grid Import"
+    SOLAR_TO_LOAD = "Solar To Load"
 
 class EnergyController():
     def __init__(self, ha, ha_mqtt, plant, rbc):
@@ -21,7 +22,12 @@ class EnergyController():
         if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
             self.self_consumption()
                 
-    def dispatch(self):
+    def dispatch(self, grid_export_limit=None):
+        if(grid_export_limit == None):
+            grid_export_limit = self.plant.max_export_power
+        else:
+            grid_export_limit = min(max(grid_export_limit, 0), self.plant.max_export_power)
+
         self.working_mode = ControlMode.DISPATCH
         self.plant.check_control_limits(
             working_mode=self.working_mode,
@@ -29,7 +35,7 @@ class EnergyController():
             discharge=self.plant.max_discharge_power,
             charge=0,
             pv=self.plant.max_pv_power,
-            grid_export=self.plant.max_export_power,
+            grid_export=grid_export_limit,
             grid_import=0)
         
     def export_all_solar(self):
@@ -55,7 +61,11 @@ class EnergyController():
                 grid_export=self.plant.max_export_power,
                 grid_import=0)
 
-    def export_excess_solar(self):
+    def export_excess_solar(self, grid_export_limit=None):
+        if(grid_export_limit == None):
+            grid_export_limit = self.plant.max_export_power
+        else:
+            grid_export_limit = min(max(grid_export_limit, 0), self.plant.max_export_power)
         self.working_mode = ControlMode.EXPORT_EXCESS_SOLAR
         self.plant.check_control_limits(
             working_mode=self.working_mode,
@@ -63,8 +73,41 @@ class EnergyController():
             discharge=self.plant.max_discharge_power,
             charge=self.plant.max_charge_power,
             pv=self.plant.max_pv_power,
-            grid_export=self.plant.max_export_power,
+            grid_export=grid_export_limit,
             grid_import=0)
+        
+    def solar_to_load(self):
+        self.working_mode = ControlMode.SOLAR_TO_LOAD
+        self.plant.check_control_limits(
+            working_mode=self.working_mode,
+            control_mode="Command Charging (PV First)",
+            discharge=self.plant.max_discharge_power,
+            charge=0,
+            pv=self.plant.max_pv_power,
+            grid_export=0,
+            grid_import=0)
+        
+    def import_power(self, battery_charge_limit = None, pv_limit = None):
+        if(battery_charge_limit == None):
+            battery_charge_limit = self.plant.max_charge_power
+        else:
+            battery_charge_limit = min(max(battery_charge_limit, 0), self.plant.max_charge_power)
+
+        if(pv_limit == None):
+            pv_limit = self.plant.max_pv_power
+        else:
+            pv_limit = min(max(pv_limit, 0), self.plant.max_pv_power)
+
+        self.working_mode = ControlMode.GRID_IMPORT
+        self.plant.check_control_limits(
+            working_mode=self.working_mode,
+            control_mode="Command Charging (PV First)",
+            discharge=self.plant.max_discharge_power,
+            charge=battery_charge_limit,
+            pv=pv_limit,
+            grid_export=0,
+            grid_import=self.plant.max_import_power)
+
 
     def self_consumption(self, pv_limit = None):
         if(pv_limit == None):

@@ -24,6 +24,7 @@ def PrintError(e):
 while(started == False):
     try:
         from RBC import RBC
+        from MPC import MPC
         from energy_controller import EnergyController
         from ha_api import HomeAssistantAPI
         import ha_mqtt
@@ -31,9 +32,8 @@ while(started == False):
         import PlantControl
 
         amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
-        amber_data = amber.get_data()
-        last_amber_update_timestamp = time.time()
-
+        #amber_data = amber.get_data()
+        
         plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
 
         ha = HomeAssistantAPI(
@@ -51,6 +51,11 @@ while(started == False):
             ha_mqtt=ha_mqtt,
             plant=plant, 
             buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
+        )
+
+        mpc = MPC(
+            ha=ha,
+            plant=plant
         )
 
         EC = EnergyController(
@@ -72,7 +77,8 @@ automatic_control = True # var to keep track of whether the auto control switch 
 
 next_amber_update_timestamp = time.time() #time to run the next amber update
 partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
-amber_data = amber.get_data()
+last_amber_update_timestamp = time.time()
+amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
 
 def determine_effective_price(amber_data):
     general_price = amber_data.general_price
@@ -143,9 +149,9 @@ def main_loop_code():
 
     if(time.time() >= next_amber_update_timestamp):
         if(partial_update):
-            amber_data = amber.get_data(partial_update=True)
+            amber_data = amber.get_data(partial_update=True, forecast_hrs=mpc.forecast_hrs)
         else:
-            amber_data = amber.get_data()
+            amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
 
         if(amber_data.prices_estimated): # If prices are estimated, don't use them
             seconds_till_next_update = 5

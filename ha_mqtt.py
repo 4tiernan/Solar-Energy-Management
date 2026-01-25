@@ -72,6 +72,12 @@ controller_update_selector = CreateSelectInput(
     options=["Working", "Update"]
 )
 
+energy_controller_selector = CreateSelectInput(
+    name="Energy Controller",
+    unique_id="energy_controller",
+    options=["RBC", "MPC"]
+)
+
 min_dispatch_price_number = CreateNumberInput(
     name="Min Dispatch Price",
     unique_id="min_dispatch_price",
