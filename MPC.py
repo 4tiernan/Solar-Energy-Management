@@ -259,7 +259,7 @@ class MPC:
             raise Exception("Unable to determine control mode from MPC plan. Selected self consumption for saftey")
 
     def run(self, amber_data):
-        output = self.run_optimisation(self, amber_data)
+        output = self.run_optimisation(amber_data)
         control_mode = self.determine_control_mode(output)
         return output, control_mode
 

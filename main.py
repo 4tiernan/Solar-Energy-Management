@@ -71,7 +71,6 @@ while(started == False):
         PrintError(e)
         
 
-
 start_time = time.time()
 last_amber_update_timestamp = 0
 automatic_control = True # var to keep track of whether the auto control switch is on
@@ -80,7 +79,7 @@ next_amber_update_timestamp = time.time() #time to run the next amber update
 partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
 last_amber_update_timestamp = time.time()
 amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
-last_control_mode = None
+last_control_mode = ""
 
 def determine_effective_price(amber_data):
     general_price = amber_data.general_price
@@ -117,7 +116,6 @@ def print_values(amber_data):
     print(f"Max 12hr Feed In: {amber_data.feedIn_max_forecast_price} c/kWh")
     print(f"General: {amber_data.general_price} c/kWh")
     
-
 # Update HA MQTT sensors
 def update_sensors(amber_data):
     rbc.update_values(amber_data=amber_data)
@@ -140,14 +138,13 @@ def update_sensors(amber_data):
     ha_mqtt.avg_daily_load_sensor.set_state(round(plant.avg_daily_load,2))
 
     
-
 update_sensors(amber_data)
 time.sleep(1)
 print("Configuration complete. Running")
 
 # Code runs every 2 seconds (to reduce cpu usage)
 def main_loop_code():
-    global automatic_control, next_amber_update_timestamp, partial_update, amber_data
+    global automatic_control, next_amber_update_timestamp, partial_update, amber_data, last_control_mode
 
     if(time.time() >= next_amber_update_timestamp):
         if(partial_update):
