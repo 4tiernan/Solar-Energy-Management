@@ -7,6 +7,9 @@ import paho.mqtt.client as mqtt
 from api_token_secrets import MQTT_HOST, MQTT_USER, MQTT_PASS
 import datetime
 import time
+from streamlit_autorefresh import st_autorefresh
+
+st_autorefresh(interval=10000, key="mpc_refresh")  # every 5 seconds
 
 if "mpc_output" not in st.session_state:
     st.session_state.mpc_output = {}
@@ -27,7 +30,7 @@ output = {
 
 data_received = False
 
-def on_message(client, userdata, msg):
+def on_message(client, userdata, msg, properties=None):
     global output, data_received
     output = json.loads(msg.payload)
     data_received = True
@@ -88,20 +91,5 @@ except Exception:
 import web_plot
 web_plot.plot_mpc_results(st, output)
 
-# -----------------------------
-# Layout
-# -----------------------------
-#col1, col2 = st.columns(2)
 
-#with col1:
-#    st.plotly_chart(soc_fig, use_container_width=True)
-
-#with col2:
-#    st.plotly_chart(power_fig, use_container_width=True)
-# -----------------------------
-# Debug / inspection
-# -----------------------------
-#with st.expander("Raw MPC Output"):
-#    st.write("SOC:", soc)
-#    st.write("Power:", power)
 
