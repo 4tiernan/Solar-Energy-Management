@@ -9,6 +9,9 @@ import matplotlib.dates as mdates
 import time
 from energy_controller import ControlMode
 
+import pytz
+tz = pytz.timezone("Australia/Brisbane")
+
 
 import json
 import paho.mqtt.client as mqtt
@@ -196,7 +199,9 @@ class MPC:
             grid_net = (grid_import.value - grid_export.value).tolist()
             #hours = np.arange(int(self.N_5min)) * self.dt_5min
 
-            now = datetime.now().replace(second=0, microsecond=0)
+            now = datetime.now(tz).replace(second=0, microsecond=0)
+            minute = (now.minute // 5) * 5
+            now = now.replace(minute=minute)
             time_index = [now + timedelta(minutes=5 * i) for i in range(int(self.N_5min))]
 
             grid_kwh_import_per_interval = grid_import.value / self.steps_per_hr 
@@ -223,8 +228,9 @@ class MPC:
                 "soc_max": self.soc_max,
                 "low_energy_threshold": self.battery_low_energy_threshold
             }
-            
-            return self.convert_to_python(output)
+            output = self.convert_to_python(output)
+            mqtt_client.publish("home/mpc/output", json.dumps(output), retain=True)
+            return output
         
     def convert_to_python(self, obj): # Convert all np objects to python objects
         if isinstance(obj, np.ndarray):
@@ -271,7 +277,6 @@ class MPC:
     def run(self, amber_data):
         output = self.run_optimisation(amber_data)
         control_mode = self.determine_control_mode(output)
-        mqtt_client.publish("home/mpc/output", json.dumps(output), retain=True)
         return output, control_mode
 
     def display_results(self, output):

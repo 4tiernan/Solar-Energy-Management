@@ -94,6 +94,7 @@ next_amber_update_timestamp = time.time() #time to run the next amber update
 partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
 last_amber_update_timestamp = time.time()
 amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
+mpc.run_optimisation(amber_data) # Get the latest optimisiation to plot on the dashboard
 last_control_mode = ""
 
 def determine_effective_price(amber_data):
@@ -183,6 +184,8 @@ def main_loop_code():
                 mpc.run(amber_data)
                 EC.run(amber_data=amber_data) 
                 print(f"MPC ran")
+            else:
+                mpc.run_optimisation(amber_data) # run the optimisation at each time step regardless 
                 
         print(f"Partial Update: {partial_update}")
         print(f"Seconds till next update: {seconds_till_next_update}")
@@ -194,7 +197,6 @@ def main_loop_code():
         automatic_control = True
         if(ha_mqtt.energy_controller_selector.state == "RBC"):
             rbc.run(amber_data) # RBC needs to run every 2 seconds
-            print(f"RBC, Working")
         
         # If the MPC selector was selected, run MPC before the next price update
         if(last_control_mode != ha_mqtt.energy_controller_selector.state and ha_mqtt.energy_controller_selector.state == "MPC"):
@@ -233,6 +235,7 @@ while True:
     except KeyboardInterrupt:
         print("Shutting down...")
         streamlit_proc.terminate()
+        break
     
     except Exception as e:
         PrintError(e)
