@@ -61,19 +61,20 @@ class EnergyController():
                 grid_export=self.plant.max_export_power,
                 grid_import=0)
 
-    def export_excess_solar(self, grid_export_limit=None):
-        if(grid_export_limit == None):
-            grid_export_limit = self.plant.max_export_power
+    def export_excess_solar(self, battery_charge_limit=None):
+        if(battery_charge_limit == None):
+            battery_charge_limit = self.plant.max_charge_power
         else:
-            grid_export_limit = min(max(grid_export_limit, 0), self.plant.max_export_power)
+            battery_charge_limit = min(max(battery_charge_limit, 0), self.plant.max_charge_power)
+
         self.working_mode = ControlMode.EXPORT_EXCESS_SOLAR.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
-            control_mode="Maximum Self Consumption",
+            control_mode="Command Charging (PV First)",
             discharge=self.plant.max_discharge_power,
-            charge=self.plant.max_charge_power,
+            charge=battery_charge_limit,
             pv=self.plant.max_pv_power,
-            grid_export=grid_export_limit,
+            grid_export=self.plant.max_export_power,
             grid_import=0)
         
     def solar_to_load(self):

@@ -2,6 +2,29 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
+from energy_controller import ControlMode
+
+
+CONTROL_MODE_ORDER = [
+    ControlMode.GRID_IMPORT.value,
+    ControlMode.SELF_CONSUMPTION.value,
+    ControlMode.SOLAR_TO_LOAD.value,
+    ControlMode.EXPORT_EXCESS_SOLAR.value,
+    ControlMode.EXPORT_ALL_SOLAR.value,
+    ControlMode.DISPATCH.value,
+    "Unable to determine",
+]
+
+CONTROL_MODE_COLORS = {
+    ControlMode.GRID_IMPORT.value:        "#9ecae1",  # blue
+    ControlMode.SELF_CONSUMPTION.value:   "#c7e9c0",  # green
+    ControlMode.SOLAR_TO_LOAD.value:      "#74c476",  # darker green
+    ControlMode.EXPORT_EXCESS_SOLAR.value:"#fdd49e",  # orange
+    ControlMode.EXPORT_ALL_SOLAR.value:   "#f16913",  # dark orange
+    ControlMode.DISPATCH.value:            "#fb6a4a",  # red
+    "Unable to determine":                 "#bdbdbd",  # grey
+}
+
 
 def round_to_nearest_5min(dt: datetime) -> datetime:
     seconds = dt.minute * 60 + dt.second
@@ -22,7 +45,6 @@ def plot_mpc_results(st, output):
     Plot MPC results using Plotly (dual-axis, 2 subplots)
     Expects soc_min, soc_max, low_energy_threshold in output dict
     """
-
     # -------------------------------
     # Extract limits safely
     # -------------------------------
@@ -42,16 +64,69 @@ def plot_mpc_results(st, output):
     # Create figure
     # -------------------------------
     fig = make_subplots(
-        rows=2,
+        rows=3,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.08,
-        row_heights=[0.65, 0.35],  # Row height proportions
+        row_heights=[0.6, 0.25, 0.25],  # Row height proportions
         specs=[
-            [{"secondary_y": True}],   # Power + Price
-            [{}]                       # SOC
+            [{'secondary_y': True}],   # Row 1 (power + prices)
+            [{'secondary_y': False}],  # Row 2 (SOC)
+            [{'secondary_y': False}]   # Row 3 (control mode)
         ]
     )
+
+    mode_to_int = {mode: i for i, mode in enumerate(CONTROL_MODE_ORDER)}
+    int_to_mode = {i: mode for mode, i in mode_to_int.items()}
+
+    mode_numeric = [
+        mode_to_int.get(m, mode_to_int["Unable to determine"])
+        for m in output["plan_modes"]
+    ]
+
+    shapes = []
+
+    for t, mode in enumerate(output["plan_modes"]):
+        shapes.append(
+            dict(
+                type="rect",
+                xref="x",
+                yref="paper",        # span full subplot height
+                x0=time_index[t],
+                x1=time_index[t] + datetime.timedelta(minutes=5),
+                y0=0,
+                y1=1,
+                fillcolor=CONTROL_MODE_COLORS.get(mode, "#bdbdbd"),
+                opacity=0.18,
+                layer="below",
+                line_width=0,
+            )
+        )
+
+    fig.update_layout(shapes=shapes)
+
+    fig.add_trace(
+        go.Scatter(
+            x=time_index,
+            y=mode_numeric,
+            mode="lines",
+            line=dict(shape="hv", width=3),
+            name="Control Mode",
+        ),
+        row=3,
+        col=1
+    )
+
+    fig.update_yaxes(
+        tickmode="array",
+        tickvals=list(mode_to_int.values()),
+        ticktext=list(mode_to_int.keys()),
+        row=3,
+        col=1,
+        title="Control Mode",
+    )
+
+
 
     # ===============================
     # TOP: POWER + PRICE
@@ -202,4 +277,4 @@ def plot_mpc_results(st, output):
     )
 
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
