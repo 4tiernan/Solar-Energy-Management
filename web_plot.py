@@ -16,13 +16,13 @@ CONTROL_MODE_ORDER = [
 ]
 
 CONTROL_MODE_COLORS = {
-    ControlMode.GRID_IMPORT.value:        "#9ecae1",  # blue
-    ControlMode.SELF_CONSUMPTION.value:   "#c7e9c0",  # green
-    ControlMode.SOLAR_TO_LOAD.value:      "#74c476",  # darker green
-    ControlMode.EXPORT_EXCESS_SOLAR.value:"#fdd49e",  # orange
-    ControlMode.EXPORT_ALL_SOLAR.value:   "#f16913",  # dark orange
-    ControlMode.DISPATCH.value:            "#fb6a4a",  # red
-    "Unable to determine":                 "#bdbdbd",  # grey
+    ControlMode.GRID_IMPORT.value:        "#fa6be0",  # blue
+    ControlMode.SELF_CONSUMPTION.value:   "#a6ebfc",  # green
+    ControlMode.SOLAR_TO_LOAD.value:      "#D6FFA4",  # darker green
+    ControlMode.EXPORT_EXCESS_SOLAR.value:"#7efd1d",  # orange
+    ControlMode.EXPORT_ALL_SOLAR.value:   "#02d938",  # dark orange
+    ControlMode.DISPATCH.value:            "#fbe94a",  # yellow
+    "Unable to determine":                 "#ff0000",  # grey
 }
 
 
@@ -72,7 +72,7 @@ def plot_mpc_results(st, output):
         specs=[
             [{'secondary_y': True}],   # Row 1 (power + prices)
             [{'secondary_y': False}],  # Row 2 (SOC)
-            [{'secondary_y': False}]   # Row 3 (control mode)
+            [{'secondary_y': True}]   # Row 3 (control mode)
         ]
     )
 
@@ -97,7 +97,7 @@ def plot_mpc_results(st, output):
                 y0=0,
                 y1=1,
                 fillcolor=CONTROL_MODE_COLORS.get(mode, "#bdbdbd"),
-                opacity=0.18,
+                opacity=0.4,
                 layer="below",
                 line_width=0,
             )
@@ -114,12 +114,14 @@ def plot_mpc_results(st, output):
             name="Control Mode",
         ),
         row=3,
-        col=1
+        col=1,
+        secondary_y=False
     )
+
     
     DT_HOURS = 5 / 60
     grid_power = np.array(output["grid_net"])
-    grid_energy_kwh = grid_power * DT_HOURS
+    grid_energy_kwh = np.round(grid_power * DT_HOURS, 2)
     fig.add_trace(
         go.Bar(
             x=time_index,
@@ -132,7 +134,8 @@ def plot_mpc_results(st, output):
             opacity=0.6
         ),
         row=3,
-        col=1
+        col=1,
+        secondary_y=True
     )
     fig.update_yaxes(
         title_text="Grid Energy (kWh / 5 min)",
@@ -149,7 +152,26 @@ def plot_mpc_results(st, output):
         title="Control Mode",
     )
 
+    max_abs = max(abs(grid_energy_kwh.min()), abs(grid_energy_kwh.max()))*1.2
+    fig.update_yaxes(
+        range=[-max_abs, max_abs],
+        zeroline=True,
+        zerolinewidth=2,
+        zerolinecolor="black",
+        row=3,
+        col=1,
+        secondary_y=True
+    )
 
+    fig.update_yaxes(
+        title_text="Grid Energy (kWh / 5 min)",
+        zeroline=True,
+        zerolinewidth=2,
+        zerolinecolor="black",
+        row=3,
+        col=1,
+        secondary_y=True
+    )
 
     # ===============================
     # TOP: POWER + PRICE
@@ -157,42 +179,42 @@ def plot_mpc_results(st, output):
 
     fig.add_trace(go.Scatter(
         x=time_index,
-        y=output["battery_power"],
+        y=round_list(output["battery_power"]),
         name="Battery Power (kW)",
         line=dict(color="blue", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
-        y=output["load"],
+        y=round_list(output["load"]),
         name="Load",
         line=dict(color="orange", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
-        y=output["solar_forecast"],
+        y=round_list(output["solar_forecast"]),
         name="Available Solar",
         line=dict(color="limegreen", dash="dash", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
-        y=output["solar_used"],
+        y=round_list(output["solar_used"]),
         name="Solar Used",
         line=dict(color="limegreen", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
-        y=output["inverter_power"],
+        y=round_list(output["inverter_power"]),
         name="Inverter Power",
         line=dict(color="purple", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
-        y=output["grid_net"],
+        y=round_list(output["grid_net"]),
         name="Grid Net (+buy / -sell)",
         line=dict(color="black", dash="dot", shape="hv")
     ), row=1, col=1, secondary_y=False)
@@ -219,7 +241,7 @@ def plot_mpc_results(st, output):
     # ===============================
     fig.add_trace(go.Scatter(
         x=time_index,
-        y=output["soc"][:-1],
+        y=round_list(output["soc"][:-1]),
         name="SOC (kWh)",
         line=dict(color="purple")
     ), row=2, col=1)
@@ -301,3 +323,6 @@ def plot_mpc_results(st, output):
 
 
     st.plotly_chart(fig, width='stretch')
+
+def round_list(data, dp=2):
+    return [round(d,dp) for d in data]
