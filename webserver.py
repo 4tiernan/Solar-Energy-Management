@@ -9,7 +9,7 @@ import datetime
 import time
 from streamlit_autorefresh import st_autorefresh
 
-st_autorefresh(interval=10000, key="mpc_refresh")  # every 5 seconds
+st_autorefresh(interval=20000, key="mpc_refresh")  # every 5 seconds
 
 if "mpc_output" not in st.session_state:
     st.session_state.mpc_output = {}

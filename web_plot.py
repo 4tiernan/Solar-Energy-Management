@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
 from energy_controller import ControlMode
-
+import numpy as np
 
 CONTROL_MODE_ORDER = [
     ControlMode.GRID_IMPORT.value,
@@ -113,6 +113,29 @@ def plot_mpc_results(st, output):
             line=dict(shape="hv", width=3),
             name="Control Mode",
         ),
+        row=3,
+        col=1
+    )
+    
+    DT_HOURS = 5 / 60
+    grid_power = np.array(output["grid_net"])
+    grid_energy_kwh = grid_power * DT_HOURS
+    fig.add_trace(
+        go.Bar(
+            x=time_index,
+            y=grid_energy_kwh,
+            name="Grid Energy (kWh)",
+            marker_color=[
+                "green" if e < 0 else "red"
+                for e in grid_energy_kwh
+            ],
+            opacity=0.6
+        ),
+        row=3,
+        col=1
+    )
+    fig.update_yaxes(
+        title_text="Grid Energy (kWh / 5 min)",
         row=3,
         col=1
     )

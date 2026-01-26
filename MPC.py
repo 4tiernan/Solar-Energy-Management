@@ -50,9 +50,9 @@ class MPC:
         self.soc_max = 1.0 * self.battery_capacity
         self.discharge_efficiency = 0.95
         self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
-        self.grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
+        self.grid_import_penalty_cost = 0.05 # $/kWh penalty for using grid power
         self.battery_low_energy_threshold = 5 # kWh
-        self.battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
+        self.battery_low_energy_penalty_cost = 0.005 # $/kWh 0.03-0.05 is ok
         self.solar_curtailment_penalty = 0.0001  # $/kWh just enough to encorage use of the solar
        
     def update_limits(self):
@@ -251,7 +251,7 @@ class MPC:
         grid_net = data["grid_net"][increment]
         battery_power = data["battery_power"][increment]
 
-        if(approx_equal(inverter_power, solar_power) or (approx_equal(inverter_power, self.plant.max_inverter_power) and solar_power > self.plant.max_inverter_power)):
+        if((approx_equal(inverter_power, solar_power) and solar_power > load_power) or (approx_equal(inverter_power, self.plant.max_inverter_power) and solar_power > self.plant.max_inverter_power)):
             if(control_active):
                 self.EC.export_all_solar() # Export if all solar is being exported or > max inverter and charging bat with excess
             return ControlMode.EXPORT_ALL_SOLAR.value
