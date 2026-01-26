@@ -125,8 +125,7 @@ class EnergyController():
     
     def print_values(self, amber_data):
         print("...")
-        print(f"kWh Drained: {round(self.plant.kwh_till_full, 2)} kWh")
-        print(f"kWh Energy Available: {round(self.plant.kwh_stored_available, 2)} kWh")
+        print(f"Current General Price: {amber_data.general_price} c/kWh")
         print(f"Current FeedIn Price: {amber_data.feedIn_price} c/kWh")
         print(f"Max Forecasted FeedIn Price: {amber_data.feedIn_max_forecast_price} c/kWh")
 

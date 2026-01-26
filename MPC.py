@@ -52,7 +52,7 @@ class MPC:
         self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
         self.grid_import_penalty_cost = 0.10 # $/kWh penalty for using grid power
         self.battery_low_energy_threshold = 5 # kWh
-        self.battery_low_energy_penalty_cost = 0.01 # $/kWh 0.03-0.05 is ok
+        self.battery_low_energy_penalty_cost = 0.03 # $/kWh 0.03-0.05 is ok
         self.solar_curtailment_penalty = 0.0001  # $/kWh just enough to encorage use of the solar
        
     def update_limits(self):

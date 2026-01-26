@@ -30,12 +30,12 @@ output = {
 
 data_received = False
 
-def on_message(client, userdata, msg, properties=None):
+def on_message(client, userdata, msg):
     global output, data_received
     output = json.loads(msg.payload)
     data_received = True
 
-client = mqtt.Client()
+client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 client.username_pw_set(MQTT_USER, MQTT_PASS)
 client.on_message = on_message
 client.connect(MQTT_HOST, 1883)
@@ -64,20 +64,25 @@ h1 {
 """, unsafe_allow_html=True)
 
 
-st.subheader("🔋 MPC Plan Dashboard (Demo)")
+st.subheader("🔋 MPC Plan Dashboard")
+
+st.metric(
+    label="Expected Profit (24h)",
+    value=f"${output['profit']:.2f}"
+)
 
 # -----------------------------
 # Sidebar controls (MPC params)
 # -----------------------------
-with st.sidebar:
-    st.header("MPC Parameters")
+#with st.sidebar:
+#    st.header("MPC Parameters")
+#
+#    horizon = st.slider("Horizon (steps)", 6, 48, 24)
+#    soc_init = st.slider("Initial SOC (%)", 0.0, 100.0, 50.0)
+#    soc_target = st.slider("Target SOC (%)", 0.0, 100.0, 80.0)
 
-    horizon = st.slider("Horizon (steps)", 6, 48, 24)
-    soc_init = st.slider("Initial SOC (%)", 0.0, 100.0, 50.0)
-    soc_target = st.slider("Target SOC (%)", 0.0, 100.0, 80.0)
-
-    p_max = st.slider("Max charge power (kW)", 1.0, 10.0, 5.0)
-    dt = st.number_input("Timestep (hours)", value=0.5)
+#    p_max = st.slider("Max charge power (kW)", 1.0, 10.0, 5.0)
+#    dt = st.number_input("Timestep (hours)", value=0.5)
 
 
 # -----------------------------

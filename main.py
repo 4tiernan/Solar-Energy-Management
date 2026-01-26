@@ -197,6 +197,7 @@ def main_loop_code():
         automatic_control = True
         if(ha_mqtt.energy_controller_selector.state == "RBC"):
             rbc.run(amber_data) # RBC needs to run every 2 seconds
+            last_control_mode = ha_mqtt.energy_controller_selector.state
         
         # If the MPC selector was selected, run MPC before the next price update
         if(last_control_mode != ha_mqtt.energy_controller_selector.state and ha_mqtt.energy_controller_selector.state == "MPC"):
@@ -217,6 +218,7 @@ def main_loop_code():
     # If Auto control has been TURNED on, print a msg and reset flag
     elif(ha.get_state("input_select.automatic_control_mode")["state"] == "On" and automatic_control == False):
         automatic_control = True
+        last_control_mode = "" # Reset flag so the approprate controller takes over
         print(f"Automatic Control turned on.")
                 
             

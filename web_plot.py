@@ -136,42 +136,42 @@ def plot_mpc_results(st, output):
         x=time_index,
         y=output["battery_power"],
         name="Battery Power (kW)",
-        line=dict(color="blue")
+        line=dict(color="blue", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
         y=output["load"],
         name="Load",
-        line=dict(color="orange")
+        line=dict(color="orange", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
         y=output["solar_forecast"],
         name="Available Solar",
-        line=dict(color="limegreen", dash="dash")
+        line=dict(color="limegreen", dash="dash", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
         y=output["solar_used"],
         name="Solar Used",
-        line=dict(color="limegreen")
+        line=dict(color="limegreen", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
         y=output["inverter_power"],
         name="Inverter Power",
-        line=dict(color="purple")
+        line=dict(color="purple", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     fig.add_trace(go.Scatter(
         x=time_index,
         y=output["grid_net"],
         name="Grid Net (+buy / -sell)",
-        line=dict(color="black", dash="dot")
+        line=dict(color="black", dash="dot", shape="hv")
     ), row=1, col=1, secondary_y=False)
 
     # Prices (right axis)
@@ -179,14 +179,14 @@ def plot_mpc_results(st, output):
         x=time_index,
         y=[round(v*100) for v in output["prices_buy"]],
         name="Buy Price (c/kWh)",
-        line=dict(color="green")
+        line=dict(color="green", shape="hv")
     ), row=1, col=1, secondary_y=True)
 
     fig.add_trace(go.Scatter(
         x=time_index,
         y=[round(v*100) for v in output["prices_sell"]],
         name="Sell Price (c/kWh)",
-        line=dict(color="red")
+        line=dict(color="red", shape="hv")
     ), row=1, col=1, secondary_y=True)
 
     fig.add_hline(y=0, row=1, col=1, line_color="black", line_width=1)
