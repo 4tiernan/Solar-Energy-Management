@@ -5,4 +5,4 @@ matplotlib
 ecos
 streamlit
 plotly
-streamlit
+streamlit-autorefresh
