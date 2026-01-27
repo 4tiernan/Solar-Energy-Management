@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import time
 import datetime
 import traceback
@@ -11,7 +13,6 @@ from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 # source venv/bin/activate (from within cd opt/energy-manager)
 # nano /opt/energy-manager/run.sh
 
-
 print("Starting...")
 started = False
 
@@ -23,6 +24,8 @@ def PrintError(e):
 
 while(started == False):
     try:
+        from RBC import RBC
+        from MPC import MPC
         from energy_controller import EnergyController
         from ha_api import HomeAssistantAPI
         import ha_mqtt
@@ -30,9 +33,8 @@ while(started == False):
         import PlantControl
 
         amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
-        amber_data = amber.get_data()
-        last_amber_update_timestamp = time.time()
-
+        #amber_data = amber.get_data()
+        
         plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
 
         ha = HomeAssistantAPI(
@@ -48,15 +50,41 @@ while(started == False):
         EC = EnergyController(
             ha=ha,
             ha_mqtt=ha_mqtt,
-            plant=plant,
+            plant=plant
+        )
+
+        rbc = RBC(
+            ha=ha, 
+            ha_mqtt=ha_mqtt,
+            plant=plant, 
+            EC=EC,
             buffer_percentage_remaining=35, # percentage to inflate predicted load consumption
         )
+
+        mpc = MPC(
+            ha=ha,
+            plant=plant,
+            EC=EC
+        )     
+
+        # Start Streamlit dashboard
+        streamlit_proc = subprocess.Popen([
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "webserver.py",
+            "--server.headless=true",
+            "--theme.base",
+            "light"
+        ])
+
+        print("Streamlit dashboard started")  
 
         started = True
     except Exception as e:
         PrintError(e)
         
-
 
 start_time = time.time()
 last_amber_update_timestamp = 0
@@ -64,14 +92,17 @@ automatic_control = True # var to keep track of whether the auto control switch 
 
 next_amber_update_timestamp = time.time() #time to run the next amber update
 partial_update = False #Indicates wheather to do a full amber update or just the current prices (if only estimated prices)
-amber_data = amber.get_data()
+last_amber_update_timestamp = time.time()
+amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
+mpc.run_optimisation(amber_data) # Get the latest optimisiation to plot on the dashboard
+last_control_mode = ""
 
 def determine_effective_price(amber_data):
     general_price = amber_data.general_price
     feedIn_price = amber_data.feedIn_price
-    target_dispatch_price = EC.target_dispatch_price
+    target_dispatch_price = rbc.target_dispatch_price
     remaining_solar_today = plant.solar_kw_remaining_today
-    forecast_load_till_morning = EC.kwh_required_remaining
+    forecast_load_till_morning = rbc.kwh_required_remaining
 
     base_load = plant.get_base_load_estimate() # kW estimated base load
     solar_daytime = plant.solar_daytime # If producing more power than base load consider it during the solar day
@@ -94,19 +125,24 @@ def determine_effective_price(amber_data):
             return effective_dispatch_price
         else:
             return general_price # default to the general price
-
-
+        
+def print_values(amber_data):
+    print("....")
+    print(f"Feed In: {amber_data.feedIn_price} c/kWh")
+    print(f"Max 12hr Feed In: {amber_data.feedIn_max_forecast_price} c/kWh")
+    print(f"General: {amber_data.general_price} c/kWh")
+    
 # Update HA MQTT sensors
 def update_sensors(amber_data):
-    EC.update_values(amber_data=amber_data)
+    rbc.update_values(amber_data=amber_data)
     ha_mqtt.max_feedIn_sensor.set_state(round(amber_data.feedIn_max_forecast_price))
     ha_mqtt.current_feedIn_sensor.set_state(round(amber_data.feedIn_price))
     ha_mqtt.current_general_price_sensor.set_state(round(amber_data.general_price))
     ha_mqtt.kwh_discharged_sensor.set_state(round(plant.kwh_till_full, 2))
     ha_mqtt.kwh_remaining_sensor.set_state(round(plant.kwh_stored_available, 2))
-    ha_mqtt.target_discharge_sensor.set_state(round(EC.target_dispatch_price))
-    ha_mqtt.kwh_required_overnight_sensor.set_state(round(EC.kwh_required_remaining, 2))    
-    ha_mqtt.kwh_required_till_sundown_sensor.set_state(round(EC.kwh_required_till_sundown, 2))
+    ha_mqtt.target_discharge_sensor.set_state(round(rbc.target_dispatch_price))
+    ha_mqtt.kwh_required_overnight_sensor.set_state(round(rbc.kwh_required_remaining, 2))    
+    ha_mqtt.kwh_required_till_sundown_sensor.set_state(round(rbc.kwh_required_till_sundown, 2))
     ha_mqtt.amber_api_calls_remaining_sensor.set_state(amber.rate_limit_remaining)
     ha_mqtt.working_mode_sensor.set_state(EC.working_mode)
     grid_export_power = round(ha.get_numeric_state("sensor.sigen_plant_grid_export_power"), 2)
@@ -117,48 +153,61 @@ def update_sensors(amber_data):
     ha_mqtt.effective_price_sensor.set_state(determine_effective_price(amber_data)) 
     ha_mqtt.avg_daily_load_sensor.set_state(round(plant.avg_daily_load,2))
 
-    EC.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value
-
+    
 update_sensors(amber_data)
 time.sleep(1)
 print("Configuration complete. Running")
 
 # Code runs every 2 seconds (to reduce cpu usage)
 def main_loop_code():
-    global automatic_control, next_amber_update_timestamp, partial_update, amber_data
+    global automatic_control, next_amber_update_timestamp, partial_update, amber_data, last_control_mode
 
     if(time.time() >= next_amber_update_timestamp):
         if(partial_update):
-            amber_data = amber.get_data(partial_update=True)
+            amber_data = amber.get_data(partial_update=True, forecast_hrs=mpc.forecast_hrs)
         else:
-            amber_data = amber.get_data()
+            amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
 
-        if(amber_data.prices_estimated):
-            seconds_till_next_update = 10
+        if(amber_data.prices_estimated): # If prices are estimated, don't use them
+            seconds_till_next_update = 5
             partial_update = True # Make the next update a partial one
-        else:
+        else: # If prices are real, use them
             partial_update = False
-            real_price_offset = 20 # seconds after the period begins when the real price starts
+            real_price_offset = 30 # seconds after the period begins when the real price starts
             now_datetime = datetime.datetime.now()
             seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
-    
-            if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+            print_values(amber_data) # Print the new latest prices
+            
+            # Only run MPC every price update
+            if(ha.get_state("input_select.automatic_control_mode")["state"] == "On" and ha_mqtt.energy_controller_selector.state == "MPC"):
                 automatic_control = True
-                EC.print_values(amber_data)
+                mpc.run(amber_data)
+                EC.run(amber_data=amber_data) 
+                print(f"MPC ran")
+            else:
+                mpc.run_optimisation(amber_data) # run the optimisation at each time step regardless 
                 
-
         print(f"Partial Update: {partial_update}")
         print(f"Seconds till next update: {seconds_till_next_update}")
         next_amber_update_timestamp = time.time() + seconds_till_next_update
 
+    # If auto control is on, run the energy controller (every 2 seconds as we need to keep track of some things)
+    if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+        EC.run(amber_data=amber_data)
+        automatic_control = True
+        if(ha_mqtt.energy_controller_selector.state == "RBC"):
+            rbc.run(amber_data) # RBC needs to run every 2 seconds
+            last_control_mode = ha_mqtt.energy_controller_selector.state
+        
+        # If the MPC selector was selected, run MPC before the next price update
+        if(last_control_mode != ha_mqtt.energy_controller_selector.state and ha_mqtt.energy_controller_selector.state == "MPC"):
+            mpc.run(amber_data)
+            last_control_mode = ha_mqtt.energy_controller_selector.state
+         
     update_sensors(amber_data)
 
-    if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
-        automatic_control = True
-        EC.run(amber_data=amber_data) # Run the energy controller (every 2 seconds as we need to keep track of some things)
 
-        
-
+    # If Auto control is off, send a notification warning so
     if(ha.get_state("input_select.automatic_control_mode")["state"] != "On"):
         if(automatic_control == True):
             #EC.self_consumption()
@@ -166,10 +215,11 @@ def main_loop_code():
             print(f"Automatic Control turned off.")
             ha.send_notification(f"Automatic Control turned off", "Self Consuming", "mobile_app_pixel_10_pro")
 
+    # If Auto control has been TURNED on, print a msg and reset flag
     elif(ha.get_state("input_select.automatic_control_mode")["state"] == "On" and automatic_control == False):
-                automatic_control = True
-                print(f"Automatic Control turned on.")
-                EC.run(amber_data=amber_data)
+        automatic_control = True
+        last_control_mode = "" # Reset flag so the approprate controller takes over
+        print(f"Automatic Control turned on.")
                 
             
     
@@ -183,6 +233,13 @@ while True:
         time.sleep(2)
 
         ha_mqtt.alive_time_sensor.set_state(round(time.time()-start_time,1))
-        
+
+    except KeyboardInterrupt:
+        print("Shutting down...")
+        streamlit_proc.terminate()
+        break
+    
     except Exception as e:
         PrintError(e)
+
+    

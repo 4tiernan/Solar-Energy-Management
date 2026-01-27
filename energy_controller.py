@@ -1,47 +1,45 @@
+from enum import Enum
+from dataclasses import dataclass
+
+class ControlMode(Enum):
+    SELF_CONSUMPTION = "Self Consumption"
+    EXPORT_EXCESS_SOLAR = "Exporting Excess Solar"
+    EXPORT_ALL_SOLAR = "Exporting All Solar"
+    DISPATCH = "Dispatching"
+    GRID_IMPORT = "Grid Import"
+    SOLAR_TO_LOAD = "Solar To Load"
+
 class EnergyController():
-    def __init__(self, ha, ha_mqtt, plant, buffer_percentage_remaining, max_discharge_rate = 15, MINIMUM_BATTERY_DISPATCH_PRICE = 10):
+    def __init__(self, ha, ha_mqtt, plant):
         self.ha = ha
         self.ha_mqtt = ha_mqtt
         self.plant = plant
 
-        self.MODES = [
-            "Dispatching",
-            "Exporting All Solar",
-            "Exporting Excess Solar",
-            "Self Consumption"
-        ]
-
-        self.feedIn_price = 0
-        self.target_dispatch_price = 0
-        self.buffer_percentage_remaining = buffer_percentage_remaining
-        self.solar_kwh_forecast_remaining = 0
-        self.kwh_energy_available = 0 # kWh of battery and solar available to use today
-        self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer_percentage=self.buffer_percentage_remaining)
-        self.max_discharge_rate = max_discharge_rate
-        self.hrs_of_discharge_available = 2
-        self.MINIMUM_BATTERY_DISPATCH_PRICE = ha_mqtt.min_dispatch_price_number.value #minimum price that is worth dispatching the battery for
-        self.working_mode = "Self Consumption"
-        self.target_price_reduction_percentage = 10 # Percentage reduction of ideal sell price to sell at (Assumes the max price won't occour)
-
-        self.last_control_mode = self.plant.get_plant_mode()
+        self.working_mode = ControlMode.SELF_CONSUMPTION.value
+        self.last_working_mode = None
 
         #Self consume on startup for saftey if auto control on
         if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
             self.self_consumption()
                 
-    def dispatch(self):
-        self.working_mode = "Dispatching"
+    def dispatch(self, grid_export_limit=None):
+        if(grid_export_limit == None):
+            grid_export_limit = self.plant.max_export_power
+        else:
+            grid_export_limit = min(max(grid_export_limit, 0), self.plant.max_export_power)
+
+        self.working_mode = ControlMode.DISPATCH.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
             control_mode="Command Discharging (PV First)",
             discharge=self.plant.max_discharge_power,
             charge=0,
             pv=self.plant.max_pv_power,
-            grid_export=self.plant.max_export_power,
+            grid_export=grid_export_limit,
             grid_import=0)
         
     def export_all_solar(self):
-        self.working_mode = "Exporting All Solar"
+        self.working_mode = ControlMode.EXPORT_ALL_SOLAR.value
 
         solar_buffer = 2 # Buffer to ensure load is covered by battery or solar
         if(self.plant.load_power + solar_buffer < self.plant.solar_kw): # Let the battery charge with excess DC power available
@@ -63,134 +61,83 @@ class EnergyController():
                 grid_export=self.plant.max_export_power,
                 grid_import=0)
 
-    def export_excess_solar(self):
-        self.working_mode = "Exporting Excess Solar"
+    def export_excess_solar(self, battery_charge_limit=None):
+        if(battery_charge_limit == None):
+            battery_charge_limit = self.plant.max_charge_power
+        else:
+            battery_charge_limit = min(max(battery_charge_limit, 0), self.plant.max_charge_power)
+
+        self.working_mode = ControlMode.EXPORT_EXCESS_SOLAR.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
-            control_mode="Maximum Self Consumption",
+            control_mode="Command Charging (PV First)",
             discharge=self.plant.max_discharge_power,
-            charge=self.plant.max_charge_power,
+            charge=battery_charge_limit,
             pv=self.plant.max_pv_power,
             grid_export=self.plant.max_export_power,
             grid_import=0)
-
-    def self_consumption(self):
-        self.working_mode = "Self Consumption"
+        
+    def solar_to_load(self):
+        self.working_mode = ControlMode.SOLAR_TO_LOAD.value
         self.plant.check_control_limits(
             working_mode=self.working_mode,
-            control_mode="Maximum Self Consumption",
+            control_mode="Command Charging (PV First)",
             discharge=self.plant.max_discharge_power,
-            charge=self.plant.max_charge_power,
+            charge=0,
             pv=self.plant.max_pv_power,
             grid_export=0,
             grid_import=0)
         
-    def update_values(self, amber_data):
-        self.plant.update_data()
-        self.feedIn_price = amber_data.feedIn_price
-        self.solar_kwh_forecast_remaining = self.ha.get_numeric_state("sensor.solcast_pv_forecast_forecast_remaining_today")
-        self.kwh_required_remaining = self.plant.kwh_required_remaining(buffer_percentage=self.buffer_percentage_remaining)
-        self.kwh_required_till_sundown = self.plant.kwh_required_till_sundown(buffer_percentage=self.buffer_percentage_remaining)
+    def import_power(self, battery_charge_limit = None, pv_limit = None):
+        if(battery_charge_limit == None):
+            battery_charge_limit = self.plant.max_charge_power
+        else:
+            battery_charge_limit = min(max(battery_charge_limit, 0), self.plant.max_charge_power)
 
-        self.kwh_energy_available = self.plant.kwh_stored_available
-        
-        self.hrs_of_discharge_available = max((self.kwh_energy_available - self.kwh_required_remaining) / self.plant.max_export_power, 0) #constrain to not go negative
+        if(pv_limit == None):
+            pv_limit = self.plant.max_pv_power
+        else:
+            pv_limit = min(max(pv_limit, 0), self.plant.max_pv_power)
 
-        self.target_dispatch_price = amber_data.feedIn_12hr_forecast_sorted[max(round(self.hrs_of_discharge_available*2),0)].price # get the number of 30 minute periods that the battery is allowed to discharge to
-        self.target_dispatch_price = ((100-self.target_price_reduction_percentage)/100.0) * self.target_dispatch_price # Slightly reduce the target dispatch price to capture more events that are still valuable given forecast uncertanty 
-        self.target_dispatch_price = round(max(self.target_dispatch_price, self.MINIMUM_BATTERY_DISPATCH_PRICE)) 
-        #print(f"Discharge 30 minute windows: {self.hrs_of_discharge_available*2}")     
+        self.working_mode = ControlMode.GRID_IMPORT.value
+        self.plant.check_control_limits(
+            working_mode=self.working_mode,
+            control_mode="Command Charging (PV First)",
+            discharge=self.plant.max_discharge_power,
+            charge=battery_charge_limit,
+            pv=pv_limit,
+            grid_export=0,
+            grid_import=self.plant.max_import_power)
 
+
+    def self_consumption(self, pv_limit = None):
+        if(pv_limit == None):
+            pv_limit = self.plant.max_pv_power
+        self.working_mode = ControlMode.SELF_CONSUMPTION.value
+        self.plant.check_control_limits(
+            working_mode=self.working_mode,
+            control_mode="Maximum Self Consumption",
+            discharge=self.plant.max_discharge_power,
+            charge=self.plant.max_charge_power,
+            pv=pv_limit,
+            grid_export=0,
+            grid_import=0)
+    
     def print_values(self, amber_data):
         print("...")
-        print(f"kWh Drained: {round(self.plant.kwh_till_full, 2)} kWh")
-        print(f"kWh Energy Available: {round(self.kwh_energy_available, 2)} kWh")
-        print(f"Current FeedIn Price: {self.feedIn_price} c/kWh")
+        print(f"Current General Price: {amber_data.general_price} c/kWh")
+        print(f"Current FeedIn Price: {amber_data.feedIn_price} c/kWh")
         print(f"Max Forecasted FeedIn Price: {amber_data.feedIn_max_forecast_price} c/kWh")
-        print(f"Target Dispatch Price: {self.target_dispatch_price} c/kWh")
-
-    def can_enter_mode(self, mode):
-        if(mode == "Dispatching"):
-            return (self.feedIn_price >= self.target_dispatch_price and
-                     self.kwh_energy_available > self.kwh_required_remaining + 1)
-        
-        elif(mode == "Exporting All Solar"):
-            return (self.solar_kwh_forecast_remaining + self.kwh_energy_available >= self.kwh_required_till_sundown + self.plant.kwh_till_full + 11 and
-                     self.feedIn_price >= 2 and self.plant.solar_daytime)
-        
-        elif(mode == "Exporting Excess Solar"):
-            return (self.feedIn_price >= 0)
-        
-        elif(mode == "Self Consumption"):
-            return True
-        
-        else:
-            raise(f"Error, mode '{mode}' is unknown")
-        
-    def should_exit(self, mode):
-        if(mode == "Dispatching"):
-            return (self.feedIn_price < self.target_dispatch_price or
-                     self.kwh_energy_available <= self.kwh_required_remaining)
-        
-        elif(mode == "Exporting All Solar"):
-            return (self.solar_kwh_forecast_remaining + self.kwh_energy_available < self.kwh_required_till_sundown + self.plant.kwh_till_full + 10 or
-                     self.feedIn_price < 2 or not self.plant.solar_daytime)
-        
-        elif(mode == "Exporting Excess Solar"):
-            return (self.feedIn_price < 0)
-        
-        elif(mode == "Self Consumption"): # No need to exit lowest mode unless another mode can be active
-            return False
-            
-        else:
-            raise(f"Error, mode '{mode}' is unknown")
-        
-    def select_mode(self):
-        current_mode = self.working_mode
-
-        # Check for higher priority modes that can be selected
-        for mode in self.MODES:
-            if current_mode is None or self.MODES.index(mode) <  self.MODES.index(current_mode):
-                if(self.can_enter_mode(mode)):
-                    return mode
-
-        # Check current control mode still wants control
-        if current_mode and not self.should_exit(current_mode):
-            return current_mode
-        
-        # Fall back to best available mode
-        for mode in self.MODES:
-            if self.can_enter_mode(mode):
-                return mode
-        
-        return None
 
     def run(self, amber_data):
-        self.update_values(amber_data=amber_data)
-
-        #Plant.display_data()
-        #print(f"Current General Price: {round(general_price)} c/kWh")
-
-        last_working_mode = self.working_mode
-        self.working_mode = self.select_mode()
-
-        if(last_working_mode != self.working_mode):
+        if(self.last_working_mode != self.working_mode): 
             self.print_values(amber_data)
+        self.last_working_mode = self.working_mode
 
         self.mainain_control_mode()
 
-    def mainain_control_mode(self):
+    def mainain_control_mode(self): # Maintain the current control mode (mainly export all solar)
         self.plant.update_data()
-        if(self.working_mode == "Self Consumption"):
-            self.self_consumption()
-        elif(self.working_mode == "Exporting Excess Solar"):  
-            self.export_excess_solar()        
-        elif(self.working_mode == "Exporting All Solar"):
+        if(self.working_mode == ControlMode.EXPORT_ALL_SOLAR.value):
             self.export_all_solar()
-        elif(self.working_mode == "Dispatching"):
-            self.dispatch()
-        else:
-            self.self_consumption()
-            raise(f"Error, control mode {self.working_mode} not defined. Defaulting to self consumption.")
-            
                 

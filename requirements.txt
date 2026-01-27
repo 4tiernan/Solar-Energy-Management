@@ -1,0 +1,8 @@
+pandas
+numpy
+cvxpy
+matplotlib
+ecos
+streamlit
+plotly
+streamlit-autorefresh
