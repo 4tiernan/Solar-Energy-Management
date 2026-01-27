@@ -280,7 +280,7 @@ class MPC:
                 self.EC.export_excess_solar(battery_charge_limit = abs(battery_power))
             return ControlMode.EXPORT_EXCESS_SOLAR.value
         
-        elif(approx_equal(grid_net, load_power)):
+        elif(grid_net > self.power_threshold): # if grid_net is positive we are importing power
             if(control_active):
                 self.EC.import_power(battery_charge_limit = abs(battery_power))
             return ControlMode.GRID_IMPORT.value
