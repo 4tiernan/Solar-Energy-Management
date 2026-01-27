@@ -46,8 +46,8 @@ class MPC:
         self.dt_5min = 5/60      # 5 minutes in hours
 
         # Battery Settings
-        self.soc_min = 0.0 * self.battery_capacity
-        self.soc_max = 1.0 * self.battery_capacity
+        self.soc_min = self.plant.kwh_backup_buffer
+        self.soc_max = self.battery_capacity - self.plant.kwh_backup_buffer
         self.discharge_efficiency = 0.95
         self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
         self.grid_import_penalty_cost = 0.05 # $/kWh penalty for using grid power
