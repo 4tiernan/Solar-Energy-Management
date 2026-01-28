@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots
 import json
 import paho.mqtt.client as mqtt
 from api_token_secrets import MQTT_HOST, MQTT_USER, MQTT_PASS
-import datetime
+import datetime, time
 import queue
 from streamlit_autorefresh import st_autorefresh
 
@@ -43,7 +43,7 @@ if "mqtt_client" not in st.session_state:
     client.loop_start()
     client.subscribe("home/mpc/output")
     st.session_state.mqtt_client = client
-
+time.sleep(0.1)
 while not mqtt_queue.empty():
     st.session_state.mpc_output = mqtt_queue.get()
     st.session_state.data_received = True
