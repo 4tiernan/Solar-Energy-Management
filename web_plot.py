@@ -45,6 +45,13 @@ def plot_mpc_results(st, output):
     Plot MPC results using Plotly (dual-axis, 2 subplots)
     Expects soc_min, soc_max, low_energy_threshold in output dict
     """
+    st.subheader("🔋 MPC Plan Dashboard")
+
+    st.metric(
+        label="Expected Profit (24h)",
+        value=f"${st.session_state.mpc_output['profit']:.2f}"
+    )
+
     # -------------------------------
     # Extract limits safely
     # -------------------------------

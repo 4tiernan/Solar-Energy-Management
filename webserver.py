@@ -6,50 +6,53 @@ import json
 import paho.mqtt.client as mqtt
 from api_token_secrets import MQTT_HOST, MQTT_USER, MQTT_PASS
 import datetime
-import time
+import queue
 from streamlit_autorefresh import st_autorefresh
-
-st_autorefresh(interval=20000, key="mpc_refresh")  # every 5 seconds
-
-if "mpc_output" not in st.session_state:
-    st.session_state.mpc_output = {}
-
-output = {
-    "time_index": [0,1,2,3],
-    "battery_power": [0,1,2,3],
-    "soc": [0,1,2,3],
-    "grid_net": [0,1,2,3],
-    "prices_buy": [0,1,2,3],
-    "prices_sell": [0,1,2,3],
-    "profit": 0,
-    "inverter_power": [0,1,2,3],
-    "solar_forecast": [0,1,2,3],
-    "solar_used": [0,1,2,3],
-    "load": [0,1,2,3]
-}
-
-data_received = False
-
-def on_message(client, userdata, msg):
-    global output, data_received
-    output = json.loads(msg.payload)
-    data_received = True
-
-client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
-client.username_pw_set(MQTT_USER, MQTT_PASS)
-client.on_message = on_message
-client.connect(MQTT_HOST, 1883)
-client.subscribe("home/mpc/output")
-client.loop_start()
-
-# Wait until we get data before trying to display it
-while data_received == False:
-    time.sleep(0.01)
 
 st.set_page_config(
     page_title="MPC Dashboard",
     layout="wide"
 )
+
+st_autorefresh(interval=20000, key="mpc_refresh")  # every 5 seconds
+
+
+if "mqtt_queue" not in st.session_state:
+    st.session_state.mqtt_queue = queue.Queue()
+
+mqtt_queue = st.session_state.mqtt_queue
+
+
+if "data_received" not in st.session_state:
+    st.session_state.data_received = False
+
+
+if "mpc_output" not in st.session_state:
+    st.session_state.mpc_output = {}
+
+
+def on_message(client, userdata, msg):
+    global mqtt_queue
+    mqtt_queue.put(json.loads(msg.payload))
+
+if "mqtt_client" not in st.session_state:
+    client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+    client.username_pw_set(MQTT_USER, MQTT_PASS)
+    client.on_message = on_message
+    client.connect(MQTT_HOST, 1883)
+    client.loop_start()
+    client.subscribe("home/mpc/output")
+    st.session_state.mqtt_client = client
+
+while not mqtt_queue.empty():
+    st.session_state.mpc_output = mqtt_queue.get()
+    st.session_state.data_received = True
+
+if not st.session_state.data_received:
+    st_autorefresh(interval=10, key="mqtt_fast_refresh") # Refresh the page instantly if there is no MQTT data
+
+
+
 
 st.markdown("""
 <style>
@@ -64,12 +67,23 @@ h1 {
 """, unsafe_allow_html=True)
 
 
-st.subheader("🔋 MPC Plan Dashboard")
 
-st.metric(
-    label="Expected Profit (24h)",
-    value=f"${output['profit']:.2f}"
-)
+if(not st.session_state.data_received): # Don't continue if no mqtt data
+    st.info("Waiting for MQTT data")
+else:
+    # -----------------------------
+    # Convert time strings to datetime objects
+    # -----------------------------
+    try:
+        time_index = [datetime.fromisoformat(t) for t in st.session_state.mpc_output["time_index"]]
+    except Exception:
+        time_index = list(range(len(st.session_state.mpc_output["soc"])))
+        
+    import web_plot
+    web_plot.plot_mpc_results(st, st.session_state.mpc_output)
+
+
+
 
 # -----------------------------
 # Sidebar controls (MPC params)
@@ -85,16 +99,9 @@ st.metric(
 #    dt = st.number_input("Timestep (hours)", value=0.5)
 
 
-# -----------------------------
-# Convert time strings to datetime objects
-# -----------------------------
-try:
-    time_index = [datetime.fromisoformat(t) for t in output["time_index"]]
-except Exception:
-    time_index = list(range(len(output["soc"])))
 
-import web_plot
-web_plot.plot_mpc_results(st, output)
+
+
 
 
 
