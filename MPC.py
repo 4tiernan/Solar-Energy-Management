@@ -66,7 +66,7 @@ class MPC:
 
     # Update any values or forecasts required to run the sim
     def update_values(self, amber_data, inject_real_values = True):        
-        self.soc_init = self.plant.kwh_stored_available
+        self.soc_init = min(self.plant.kwh_stored_available, self.soc_max) #constrain the soc to within limits to stop solver from doing weird stuff
 
         # ---------- Forecasts ----------
         # Load Forecast
