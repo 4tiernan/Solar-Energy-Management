@@ -162,6 +162,10 @@ print("Configuration complete. Running")
 def main_loop_code():
     global automatic_control, next_amber_update_timestamp, partial_update, amber_data, last_control_mode
 
+    if(ha.get_state("input_select.automatic_control_mode")["state"] == "Off" and ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+            ha.set_switch_state("switch.sigen_plant_remote_ems_controled_by_home_assistant", True)
+            time.sleep(2) # Wait for HA to update the status in the ESS to allow for control modes to be changed
+
     if(time.time() >= next_amber_update_timestamp):
         if(partial_update):
             amber_data = amber.get_data(partial_update=True, forecast_hrs=mpc.forecast_hrs)
