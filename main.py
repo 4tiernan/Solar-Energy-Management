@@ -172,6 +172,8 @@ def main_loop_code():
         else:
             amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
 
+        ha_mqtt.estimated_price_status_sensor.set_state(amber_data.prices_estimated)
+
         if(amber_data.prices_estimated): # If prices are estimated, don't use them
             seconds_till_next_update = 5
             partial_update = True # Make the next update a partial one
@@ -180,6 +182,11 @@ def main_loop_code():
             real_price_offset = 30 # seconds after the period begins when the real price starts
             now_datetime = datetime.datetime.now()
             seconds_till_next_update = 300 - ((now_datetime.minute * 60 + now_datetime.second) % 300) + real_price_offset
+
+        next_amber_update_timestamp = time.time() + seconds_till_next_update #update the time here before running MPC to ensure more accurate timings
+        
+
+        if(not amber_data.prices_estimated): #If the prices are real
             print_values(amber_data) # Print the new latest prices
             
             # Only run MPC every price update
@@ -190,10 +197,11 @@ def main_loop_code():
                 print(f"MPC ran")
             else:
                 mpc.run_optimisation(amber_data) # run the optimisation at each time step regardless 
-                
+        
         print(f"Partial Update: {partial_update}")
-        print(f"Seconds till next update: {seconds_till_next_update}")
-        next_amber_update_timestamp = time.time() + seconds_till_next_update
+        print(f"Seconds till next update: {round(time.time() - next_amber_update_timestamp)}")
+        
+        
 
     # If auto control is on, run the energy controller (every 2 seconds as we need to keep track of some things)
     if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):

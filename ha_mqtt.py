@@ -175,6 +175,11 @@ avg_daily_load_sensor = CreateSensor(
     unique_id="avg_daily_load_python",
     unit_of_measurement="kWh"
 )
+estimated_price_status_sensor = CreateSensor(
+    name = "Estimated Price",
+    unique_id="estimated_price_python",
+    unit_of_measurement=""
+)
 
 def initalise_entities():
     min_dispatch_price_number.entity.set_value(0)
@@ -182,7 +187,6 @@ def initalise_entities():
     system_state_sensor.set_state("Self Consumption")
     amber_api_calls_remaining_sensor.set_state(0)
     kwh_required_overnight_sensor.set_state(0)
-    alive_time_sensor.set_state(0)
     alive_time_sensor.set_state(0)
     current_feedIn_sensor.set_state(0)
     current_general_price_sensor.set_state(0)
@@ -194,9 +198,10 @@ def initalise_entities():
     base_load_sensor.set_state(0)
     avg_daily_load_sensor.set_state(0)
     kwh_required_till_sundown_sensor.set_state(0)
+    estimated_price_status_sensor.set_state(0)
     time.sleep(10)
 
 #initalise_entities()
 
-#kwh_required_till_sundown_sensor.set_state(0)
+#estimated_price_status_sensor.set_state(0)
 #time.sleep(10)
