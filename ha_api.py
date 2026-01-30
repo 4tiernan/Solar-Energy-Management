@@ -19,26 +19,11 @@ class HomeAssistantAPI:
         }
         self.errors = errors
 
-    def ha_request(self, url, method, data=None, params = None, headers = None):
-        if(headers == None):
-            headers = self.headers
-        try:
-            if(method =='get'):
-                r = requests.get(url, headers=headers, params=params)
-                r.raise_for_status()
-                return r.json()
-            elif(method == 'post'):
-                r = requests.post(url, json=data, headers=headers)
-                r.raise_for_status()
-                return r.json()
-            else: 
-                raise Exception(f"Method not get or post: {method}")
-        except Exception as e:
-            raise Exception(f"Unable to connect to HA, exception: {e}")
-    
     def get_state(self, entity_id):
         url = f"{self.base_url}/api/states/{entity_id}"
-        return self.ha_request(url=url, method='get')
+        r = requests.get(url, headers=self.headers)
+        r.raise_for_status()
+        return r.json()
     
     def get_numeric_state(self, entity_id):
         json_resp = self.get_state(entity_id)
@@ -46,8 +31,10 @@ class HomeAssistantAPI:
 
     def call_service(self, domain, service, data):
         url = f"{self.base_url}/api/services/{domain}/{service}"
-        return self.ha_request(url=url, data=data, method='post')
-
+        r = requests.post(url, json=data, headers=self.headers)
+        r.raise_for_status()
+        return r.json()
+    
     def send_notification(self, title, msg, target):
         self.call_service(
             "notify",
@@ -71,7 +58,9 @@ class HomeAssistantAPI:
         if end_time:
             params["end_time"] = end_time
 
-        response = self.ha_request(url=url, method='get', params=params)
+        r = requests.get(url, headers=self.headers, params=params)
+        r.raise_for_status()
+        response = r.json()
         history = []
         date_format = "%Y-%m-%dT%H:%M:%S"
         for i in response[0]:
@@ -120,4 +109,6 @@ class HomeAssistantAPI:
     def fire_event(self, event_type, data=None):
         data = data or {}
         url = f"{self.base_url}/api/events/{event_type}"
-        return self.ha_request(url=url, method='post', data=data)
+        r = requests.post(url, json=data, headers=self.headers)
+        r.raise_for_status()
+        return r.json()
