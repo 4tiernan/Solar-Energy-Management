@@ -172,7 +172,7 @@ def main_loop_code():
         else:
             amber_data = amber.get_data(forecast_hrs=mpc.forecast_hrs)
 
-        ha_mqtt.estimated_price_status_sensor.set_state(amber_data.prices_estimated)
+        ha_mqtt.estimated_price_status_sensor.set_state(int(amber_data.prices_estimated))
 
         if(amber_data.prices_estimated): # If prices are estimated, don't use them
             seconds_till_next_update = 5
@@ -235,7 +235,7 @@ def main_loop_code():
                 
             
     
-while True:
+while False:
     try:
         if(ha_mqtt.controller_update_selector.state == "Update"):
             print("Update Commanded, exiting")
