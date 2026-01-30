@@ -123,15 +123,9 @@ class EnergyController():
             grid_export=0,
             grid_import=0)
     
-    def print_values(self, amber_data):
-        print("...")
-        print(f"Current General Price: {amber_data.general_price} c/kWh")
-        print(f"Current FeedIn Price: {amber_data.feedIn_price} c/kWh")
-        print(f"Max Forecasted FeedIn Price: {amber_data.feedIn_max_forecast_price} c/kWh")
-
     def run(self, amber_data):
-        if(self.last_working_mode != self.working_mode): 
-            self.print_values(amber_data)
+        #if(self.last_working_mode != self.working_mode): 
+        #    self.print_values(amber_data)
         self.last_working_mode = self.working_mode
 
         self.mainain_control_mode()
