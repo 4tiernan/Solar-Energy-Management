@@ -199,7 +199,7 @@ def main_loop_code():
                 mpc.run_optimisation(amber_data) # run the optimisation at each time step regardless 
         
         print(f"Partial Update: {partial_update}")
-        print(f"Seconds till next update: {next_amber_update_timestamp - round(time.time())}")
+        print(f"Seconds till next update: {round(next_amber_update_timestamp - time.time())}")
         
         
 
