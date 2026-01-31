@@ -47,7 +47,7 @@ class MPC:
 
         # Battery Settings
         self.soc_min = self.plant.kwh_backup_buffer
-        self.soc_max = self.battery_capacity - self.plant.kwh_backup_buffer
+        self.soc_max = self.battery_capacity
         self.discharge_efficiency = 0.95
         self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
         self.grid_import_penalty_cost = 0.05 # $/kWh penalty for using grid power
@@ -65,8 +65,9 @@ class MPC:
         self.grid_export_limit = self.plant.max_export_power    # kW (Grid export limit)      
 
     # Update any values or forecasts required to run the sim
-    def update_values(self, amber_data, inject_real_values = True):        
-        self.soc_init = min(self.plant.kwh_stored_available, self.soc_max) #constrain the soc to within limits to stop solver from doing weird stuff
+    def update_values(self, amber_data, inject_real_values = True):   
+        current_soc = (self.plant.battery_soc / 100)*self.soc_max
+        self.soc_init = min(current_soc, self.soc_max) #constrain the soc to within limits to stop solver from doing weird stuff
 
         # ---------- Forecasts ----------
         # Load Forecast

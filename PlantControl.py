@@ -50,6 +50,7 @@ class Plant:
         return self.ha.get_state("select.sigen_plant_remote_ems_control_mode")["state"]
 
     def update_data(self):
+        self.battery_soc = self.ha.get_numeric_state('sensor.sigen_plant_battery_state_of_charge')
         self.kwh_backup_buffer = (self.ha.get_numeric_state("number.sigen_plant_ess_backup_state_of_charge")/100.0) * self.rated_capacity
         self.kwh_stored_energy = self.ha.get_numeric_state("sensor.sigen_plant_available_max_discharging_capacity")
         self.kwh_stored_available = self.kwh_stored_energy - self.kwh_backup_buffer
