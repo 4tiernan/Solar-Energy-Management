@@ -43,7 +43,7 @@ def round_to_nearest_5min(dt: datetime) -> datetime:
 def plot_mpc_results(st, output):
     """
     Plot MPC results using Plotly (dual-axis, 2 subplots)
-    Expects soc_min, soc_max, low_energy_threshold in output dict
+    Expects soc_min, soc_max in output dict
     """
     st.subheader("🔋 MPC Plan Dashboard")
 
@@ -57,7 +57,6 @@ def plot_mpc_results(st, output):
     # -------------------------------
     soc_min = output.get("soc_min", None)
     soc_max = output.get("soc_max", None)
-    low_energy_threshold = output.get("low_energy_threshold", None)
 
     # -------------------------------
     # Time index handling
@@ -260,13 +259,6 @@ def plot_mpc_results(st, output):
     if soc_max is not None:
         fig.add_hline(y=soc_max, row=2, col=1, line_dash="dash", line_color="red")
 
-    if low_energy_threshold is not None:
-        fig.add_hline(
-            y=low_energy_threshold,
-            row=2, col=1,
-            line_dash="dash",
-            line_color="orange"
-        )
 
     # ===============================
     # AXES LIMITS (soft defaults)

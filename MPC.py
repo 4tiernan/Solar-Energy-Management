@@ -51,8 +51,6 @@ class MPC:
         self.discharge_efficiency = 0.95
         self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
         self.grid_import_penalty_cost = 0.05 # $/kWh penalty for using grid power
-        self.battery_low_energy_threshold = 5 # kWh
-        self.battery_low_energy_penalty_cost = 0.005 # $/kWh 0.03-0.05 is ok
         self.solar_curtailment_penalty = 0.0001  # $/kWh just enough to encorage use of the solar
        
     def update_limits(self):
@@ -102,7 +100,6 @@ class MPC:
         p_charge = cp.Variable(int(self.N_5min), nonneg=True)
         p_discharge = cp.Variable(int(self.N_5min), nonneg=True)
         soc = cp.Variable(int(self.N_5min)+1)
-        low_energy_violation = cp.Variable(int(self.N_5min), nonneg=True)
 
         # Solar
         solar_used = cp.Variable(int(self.N_5min), nonneg=True) # Solar used out of the forecast value (allows for curtailment)
@@ -138,7 +135,6 @@ class MPC:
                             - self.dt_5min / self.discharge_efficiency * p_discharge[t]]
             # SoC limits
             constraints += [soc[t+1] >= self.soc_min, soc[t+1] <= self.soc_max]
-            constraints += [soc[t+1] + low_energy_violation[t] >= self.battery_low_energy_threshold] # Soft reserve 
 
             # Battery Power limits
             constraints += [p_charge[t] <= self.p_max_charge]
@@ -174,7 +170,6 @@ class MPC:
             cp.sum(cp.multiply(grid_import, self.prices_buy) * self.dt_5min
                 - cp.multiply(grid_export, self.prices_sell) * self.dt_5min
                 + cp.multiply(grid_import, self.grid_import_penalty_cost) * self.dt_5min
-                + cp.multiply(self.battery_low_energy_penalty_cost,  low_energy_violation) * self.dt_5min
                 + cp.multiply(self.solar_curtailment_penalty, solar_curtail) * self.dt_5min
                 + cp.multiply(self.battery_min_export_cost, p_discharge) * self.dt_5min
                 ))
@@ -227,7 +222,6 @@ class MPC:
                 "load": self.load_5min,
                 "soc_min": self.soc_min,
                 "soc_max": self.soc_max,
-                "low_energy_threshold": self.battery_low_energy_threshold
             }
             output = self.convert_to_python(output)
             plan_modes = self.determine_plan_modes(output)
@@ -343,7 +337,6 @@ class MPC:
         plt.plot(time_index, output["soc"][0:-1], label='Battery SOC (kWh)', color='purple')
         plt.axhline(self.soc_min, color='red', linestyle='--', label='SOC Min/Max')
         plt.axhline(self.soc_max, color='red', linestyle='--')
-        plt.axhline(self.battery_low_energy_threshold, color='orange', linestyle='--', label='Low Energy Threshold')
 
         plt.xlabel('Hour of Day')
         plt.ylabel('SOC (kWh)')
