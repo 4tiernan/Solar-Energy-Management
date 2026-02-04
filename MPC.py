@@ -264,7 +264,7 @@ class MPC:
         elif(inverter_power > solar_power + self.power_threshold and inverter_power > load_power + self.power_threshold):
             if(control_active):
                 export_limit = abs(grid_net)
-                if(inverter_power == self.inverter_p_max): # If Inverter is at 100% in the plan make sure it is in reality
+                if(approx_equal(inverter_power, self.inverter_p_max)): # If Inverter is at 100% in the plan make sure it is in reality
                     export_limit = self.grid_export_limit
                 
                 self.EC.dispatch(grid_export_limit = export_limit)
