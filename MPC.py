@@ -50,7 +50,7 @@ class MPC:
         self.soc_max = self.battery_capacity
         self.discharge_efficiency = 0.95
         self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
-        self.grid_import_penalty_cost = 0.05 # $/kWh penalty for using grid power
+        self.grid_import_penalty_cost = 0.02 # $/kWh penalty for using grid power
         self.solar_curtailment_penalty = 0.0001  # $/kWh just enough to encorage use of the solar
        
     def update_limits(self):
