@@ -90,9 +90,9 @@ class MPC:
         self.prices_buy = np.array(general_price_forecast) / 100      # buy price in $ from cents
         self.prices_sell  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
 
-        self.prices_buy[0:5] = 0.03 #Testing
-        self.prices_sell[0:5] = 0.01
-        self.soc_init = 0.95*self.soc_max
+        #self.prices_buy[0:5] = 0.03 #Testing
+        #self.prices_sell[0:5] = 0.01
+        #self.soc_init = 0.95*self.soc_max
 
     def run_optimisation(self, amber_data):
         self.update_values(amber_data)
