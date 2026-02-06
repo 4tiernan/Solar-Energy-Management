@@ -52,6 +52,7 @@ class MPC:
         self.battery_min_export_cost = 0.07  # $/kWh (Export will only occour ABOVE this value)
         self.grid_import_penalty_cost = 0.02 # $/kWh penalty for using grid power
         self.solar_curtailment_penalty = 0.0001  # $/kWh just enough to encorage use of the solar
+        self.min_solar_export_price = 0.02 # $/kWh minimum price to sell solar 
        
     def update_limits(self):
         self.battery_capacity = self.plant.rated_capacity  # kWh
@@ -66,7 +67,7 @@ class MPC:
     def update_values(self, amber_data, inject_real_values = True):   
         current_soc = (self.plant.battery_soc / 100)*self.soc_max
         self.soc_init = min(current_soc, self.soc_max) #constrain the soc to within limits to stop solver from doing weird stuff
-
+        
         # ---------- Forecasts ----------
         # Load Forecast
         load_power_states = self.plant.forecast_load_power(forecast_hours_from_now=self.forecast_hrs) # Calculate the average load power
@@ -88,6 +89,10 @@ class MPC:
         # Convert to $/kWh
         self.prices_buy = np.array(general_price_forecast) / 100      # buy price in $ from cents
         self.prices_sell  = np.array(feed_in_price_forecast) / 100      # sell price in $ from cents
+
+        self.prices_buy[0:5] = 0.03 #Testing
+        self.prices_sell[0:5] = 0.01
+        self.soc_init = 0.95*self.soc_max
 
     def run_optimisation(self, amber_data):
         self.update_values(amber_data)
@@ -126,7 +131,8 @@ class MPC:
 
         #zero_price_mask = (self.prices_sell == 0).astype(float) # Represents when prices are zero
 
-        #low_price_mask = (self.prices_sell < self.battery_min_export_cost).astype(float) # Mask to represent when price is below min dispatch price
+        #self.solar_export_soc_threshold = 0.9 * self.soc_max
+        #min_export_price_mask = (self.prices_sell < self.min_solar_export_price).astype(float) # Mask to represent when price is below min dispatch price (True if price is above min export price)
         #battery_export = cp.Variable(int(self.N_5min), nonneg=True)
 
         for t in range(int(self.N_5min)):
@@ -139,6 +145,11 @@ class MPC:
             # Battery Power limits
             constraints += [p_charge[t] <= self.p_max_charge]
             constraints += [p_discharge[t] <= self.p_max_discharge]
+
+            # Limit export to only occour at reasonable prices until the battery is near full
+            #if self.prices_sell[t] < self.min_solar_export_price:
+            #    excess_solar = max(self.solar_5min[t] - self.load_5min[t], 0)
+            #    constraints += [grid_export[t] <= excess_solar * (soc[t] / self.soc_max)]
             
             # Limit battery discharge export based on price
             #if(self.prices_sell[t] < self.battery_min_export_cost):
