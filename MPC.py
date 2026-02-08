@@ -254,10 +254,10 @@ class MPC:
         solar_power = data["solar_used"][increment]
         solar_forecast = data["solar_forecast"][increment]
         load_power = data["load"][increment]
-        grid_net = data["grid_net"][increment]
+        grid_net = data["grid_net"][increment] # if grid_net is positive we are importing power 
         battery_power = data["battery_power"][increment]
 
-        if((approx_equal(inverter_power, solar_power) and solar_power > load_power) or (approx_equal(inverter_power, self.plant.max_inverter_power) and solar_power > self.plant.max_inverter_power)):
+        if((approx_equal(inverter_power, solar_power) and solar_power > load_power + self.power_threshold and grid_net < self.power_threshold) or (approx_equal(inverter_power, self.plant.max_inverter_power) and solar_power > self.plant.max_inverter_power)):
             if(control_active):
                 self.EC.export_all_solar() # Export if all solar is being exported or > max inverter and charging bat with excess
             return ControlMode.EXPORT_ALL_SOLAR.value
