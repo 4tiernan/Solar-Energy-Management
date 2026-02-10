@@ -22,6 +22,12 @@ def PrintError(e):
     print("Trying again after 30 seconds")
     time.sleep(30)
 
+def ensure_remote_ems(): # Ensures the remote EMS switch is on provided the automatic control switch is on
+    if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
+            ha.set_switch_state("switch.sigen_plant_remote_ems_controled_by_home_assistant", True)
+            time.sleep(2) # delay to ensure the change has time to become effective
+
+
 while(started == False):
     try:
         from RBC import RBC
@@ -42,8 +48,8 @@ while(started == False):
             token=HA_TOKEN,
             errors=True
         )
-        if(ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
-            ha.set_switch_state("switch.sigen_plant_remote_ems_controled_by_home_assistant", True)
+        ensure_remote_ems()
+        
 
         ha_mqtt.controller_update_selector.set_state("Working")
 
@@ -162,9 +168,7 @@ print("Configuration complete. Running")
 def main_loop_code():
     global automatic_control, next_amber_update_timestamp, partial_update, amber_data, last_control_mode
 
-    if(ha.get_state("input_select.automatic_control_mode")["state"] == "Off" and ha.get_state("input_select.automatic_control_mode")["state"] == "On"):
-            ha.set_switch_state("switch.sigen_plant_remote_ems_controled_by_home_assistant", True)
-            time.sleep(2) # Wait for HA to update the status in the ESS to allow for control modes to be changed
+    ensure_remote_ems() # Check Remote EMS switch is active
 
     if(time.time() >= next_amber_update_timestamp):
         if(partial_update):
