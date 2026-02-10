@@ -48,8 +48,12 @@ def plot_mpc_results(st, output):
     st.subheader("🔋 MPC Plan Dashboard")
 
     st.metric(
-        label="Expected Profit (24h)",
-        value=f"${st.session_state.mpc_output['profit']:.2f}"
+        label="Expected Profit Today",
+        value=f"${st.session_state.mpc_output['profit_today']:.2f}"
+    )
+    st.metric(
+        label="Expected Profit Tomorrow (so far)",
+        value=f"${st.session_state.mpc_output['profit_tomorrow']:.2f}"
     )
 
     # -------------------------------

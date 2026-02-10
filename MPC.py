@@ -214,9 +214,24 @@ class MPC:
             grid_kwh_import_per_interval = grid_import.value / self.steps_per_hr 
             grid_kwh_export_per_interval = grid_export.value / self.steps_per_hr 
 
-            cost_import = np.sum(grid_kwh_import_per_interval * self.prices_buy)   # $ paid to grid
-            revenue_export = np.sum(grid_kwh_export_per_interval * self.prices_sell)  # $ earned from export
-            grid_profit = revenue_export - cost_import
+            # Per-interval profit ($)
+            interval_profit = (
+                grid_kwh_export_per_interval * self.prices_sell
+                - grid_kwh_import_per_interval * self.prices_buy
+            )
+
+            today = now.date()
+            tomorrow = today + timedelta(days=1)
+
+            profit_today = 0.0
+            profit_tomorrow = 0.0
+
+            for t, ts in enumerate(time_index):
+                if ts.date() == today:
+                    profit_today += interval_profit[t]
+                elif ts.date() == tomorrow:
+                    profit_tomorrow += interval_profit[t]
+
 
             # store it in shared dict
             output = {
@@ -226,7 +241,8 @@ class MPC:
                 "grid_net": grid_net,
                 "prices_buy": self.prices_buy.tolist(),
                 "prices_sell": self.prices_sell.tolist(),
-                "profit": float(grid_profit),
+                "profit_today": float(profit_today),
+                "profit_tomorrow": float(profit_tomorrow),
                 "inverter_power": inverter_power.value.tolist(),
                 "solar_forecast": self.solar_5min,
                 "solar_used": solar_used.value.tolist(),
