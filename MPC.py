@@ -262,7 +262,7 @@ class MPC:
                 self.EC.export_all_solar() # Export if all solar is being exported or > max inverter and charging bat with excess
             return ControlMode.EXPORT_ALL_SOLAR.value
         
-        elif(approx_equal(inverter_power, load_power) and approx_equal(load_power, used_solar_power) and used_solar_power < solar_available + self.power_threshold):
+        elif(approx_equal(inverter_power, load_power) and approx_equal(load_power, used_solar_power) and used_solar_power + self.power_threshold < solar_available):
             if(control_active):
                 self.EC.solar_to_load() # If battery is not charging and solar is being curtailed, send solar straight to load
             return ControlMode.SOLAR_TO_LOAD.value
