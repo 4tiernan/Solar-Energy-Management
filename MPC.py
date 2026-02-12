@@ -121,7 +121,7 @@ class MPC:
         # ----------- Constraints -----------
         constraints = []
         constraints += [soc[0] == self.soc_init] # Set the inital soc 
-        constraints += [soc[-1] == min(self.soc_max*0.99, self.soc_init)] # Set the final soc to be close to the starting soc but limit to ensure possibility
+        #constraints += [soc[-1] == min(self.soc_max*0.99, self.soc_init)] # Set the final soc to be close to the starting soc but limit to ensure possibility
 
         #self.prices_sell[250:270] = -0.30 # Allow testing of various pricings
         #self.prices_buy[250:270] = -0.20
