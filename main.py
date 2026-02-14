@@ -239,7 +239,7 @@ def main_loop_code():
                 
             
     
-while True:
+while False:
     try:
         if(ha_mqtt.controller_update_selector.state == "Update"):
             print("Update Commanded, exiting")

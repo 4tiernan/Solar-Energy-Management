@@ -6,15 +6,16 @@ import time
 import numpy as np
 import math
 import pandas as pd
+from collections import defaultdict
 
 
 HA_TZ = ZoneInfo("Australia/Brisbane") 
 
 @dataclass
-class StateClass:
-    states: list[float]
-    state: float
-    time: datetime
+class BinnedStateClass:
+    states: list[float] # States that make up the avg
+    avg_state: float # Avg of the states
+    time: datetime # Start time of the bin
 
 class Plant:
     def __init__(self, HA_URL, TOKEN, errors=True):
@@ -65,7 +66,7 @@ class Plant:
         self.inverter_power = self.ha.get_numeric_state("sensor.sigen_plant_plant_active_power")
         self.grid_power = self.ha.get_numeric_state("sensor.sigen_plant_grid_active_power")
         self.load_power = self.ha.get_numeric_state("sensor.sigen_plant_consumed_power")
-        self.avg_daily_load = self.get_load_avg(days_ago=self.load_avg_days)[-1].state
+        self.avg_daily_load = self.get_load_avg(days_ago=self.load_avg_days)[-1].avg_state
         
         self.hours_till_full = 0
         self.hours_till_empty = 0
@@ -73,6 +74,130 @@ class Plant:
             self.hours_till_full = round(self.kwh_till_full / abs(self.battery_kw), 2)
         elif(self.battery_kw > 0):
             self.hours_till_empty = round(self.kwh_stored_available / abs(self.battery_kw), 2)
+    
+    def historical_data(self, hours, bin_period=5): # Get the requested hours of historical data for the plant being (SOC, battery power, inverter power, solar power, grid power, load power and prices.) in order oldest to newest
+        """
+        hours  -> hours of historical data to retreive
+        bin_period -> bin size in minutes to average data across
+
+        Returns:
+            List of BinnedStateClass objs from oldest to newest (-1 index will be the most recent data):
+            [
+                bin.time": bin_start_datetime,
+                bin.avg_state": average_value_in_bin
+                ...
+            ]
+        """
+        now = datetime.datetime.now(HA_TZ)
+        start = now - datetime.timedelta(hours=hours)
+        end = now
+        data_bin_qty = int((hours * 60) / bin_period)
+
+        battery_soc_state_history = self.ha.get_history("sensor.sigen_plant_battery_state_of_charge", start_time=start, end_time=end)
+        battery_power_state_history = self.ha.get_history("sensor.reversed_battery_power", start_time=start, end_time=end)
+        inverter_power_state_history = self.ha.get_history("sensor.sigen_plant_plant_active_power", start_time=start, end_time=end)
+        solar_power_state_history = self.ha.get_history("sensor.sigen_plant_pv_power", start_time=start, end_time=end)
+        load_power_state_history = self.ha.get_history("sensor.sigen_plant_consumed_power", start_time=start, end_time=end)
+        grid_power_state_history = self.ha.get_history("sensor.sigen_plant_grid_active_power", start_time=start, end_time=end)
+
+        binned_battery_soc_state_history = self.bin_data(battery_soc_state_history, bin_period_minutes=bin_period, bin_qty=data_bin_qty)
+        binned_battery_power_state_history = self.bin_data(battery_power_state_history, bin_period_minutes=bin_period, bin_qty=data_bin_qty)
+        binned_inverter_power_state_history = self.bin_data(inverter_power_state_history, bin_period_minutes=bin_period, bin_qty=data_bin_qty)
+        binned_solar_power_state_history = self.bin_data(solar_power_state_history, bin_period_minutes=bin_period, bin_qty=data_bin_qty)
+        binned_load_power_state_history = self.bin_data(load_power_state_history, bin_period_minutes=bin_period, bin_qty=data_bin_qty)
+        binned_grid_power_state_history = self.bin_data(grid_power_state_history, bin_period_minutes=bin_period, bin_qty=data_bin_qty)
+
+        binned_battery_soc_kwh_history = [(item.avg_state / 100.0) * self.rated_capacity for item in binned_battery_soc_state_history]
+        
+        history_time_index = [item.time.isoformat() for item in binned_battery_soc_state_history] # Get the time marks from the data
+
+        output = {
+            "time_index": history_time_index,
+            "soc": binned_battery_soc_kwh_history,
+            "battery_power": [state.avg_state for state in binned_battery_power_state_history],
+            "inverter_power": [state.avg_state for state in binned_inverter_power_state_history],
+            "solar_power": [state.avg_state for state in binned_solar_power_state_history],
+            "load_power": [state.avg_state for state in binned_load_power_state_history],
+            "grid_power": [state.avg_state for state in binned_grid_power_state_history],
+        }
+        return output
+
+    def bin_data(self, history_array, bin_period_minutes, bin_qty=None):
+        """
+        history_array[x].state  -> numeric value (string or float)
+        history_array[x].time   -> datetime object (tz-aware)
+        bin_period_minutes      -> time period to bin data into
+        bin_qty                 -> total qty of bins to be outputted
+
+        Returns:
+            List of BinnedStateClass objs:
+            [
+                bin.time": bin_start_datetime,
+                bin.avg_state": average_value_in_bin
+                ...
+            ]
+        """
+        if not history_array:
+            return []
+
+        # Ensure sorted by time
+        history_array = sorted(history_array, key=lambda x: x.time)
+
+        bin_delta = datetime.timedelta(minutes=bin_period_minutes)
+
+        # Align first bin to the nearest lower boundary
+        first_time = history_array[0].time
+        bin_start = first_time - datetime.timedelta(
+            minutes=first_time.minute % bin_period_minutes,
+            seconds=first_time.second,
+            microseconds=first_time.microsecond,
+        )
+
+        bins = defaultdict(list)
+
+        for item in history_array:
+            try:
+                value = float(item.state)
+            except (ValueError, TypeError):
+                continue  # skip non-numeric states
+
+            # Determine which bin this belongs to
+            seconds_since_start = (item.time - bin_start).total_seconds()
+            bin_index = int(seconds_since_start // bin_delta.total_seconds())
+            current_bin_start = bin_start + bin_index * bin_delta
+
+            bins[current_bin_start].append(value)
+
+
+        # Build output
+        result = []
+        bin_keys = sorted(bins.keys())
+        if bin_qty is not None:
+            bin_keys = bin_keys[-bin_qty:]# Get the bin_qty number of most recent bins
+
+            if len(bin_keys) < bin_qty: # Add in missing bins that weren't filled 
+                missing = bin_qty - len(bin_keys)
+
+                if bin_keys:
+                    earliest_time = bin_keys[0]
+                else:
+                    # fallback if no bins exist
+                    earliest_time = history_array[-1].time
+
+                # generate missing bins BEFORE earliest_time
+                for i in range(missing, 0, -1):
+                    bin_time = earliest_time - i * bin_delta
+                    result.append(
+                        BinnedStateClass(states=[], avg_state=0, time=bin_time)
+                    )
+
+
+        for start_time in bin_keys:
+            values = bins[start_time]
+            avg_value = round(sum(values) / len(values), 2)
+            result.append(BinnedStateClass(states=values, avg_state=avg_value, time=start_time))
+
+        return result
 
     def display_data(self):
         self.update_data()
@@ -94,7 +219,7 @@ class Plant:
         raise("SET THIS UP")
         #time till full/empty
     
-    def check_control_limits(self, working_mode, control_mode, discharge, charge, pv, grid_export, grid_import):
+    def check_control_limits(self, working_mode, control_mode, discharge, charge, pv, grid_export, grid_import): # Check if control limits match desired values and change them if required. 
         current_control_mode = self.get_plant_mode()
         curent_discharge_limit = self.ha.get_numeric_state("number.sigen_plant_ess_max_discharging_limit")
         curent_charge_limit = self.ha.get_numeric_state("number.sigen_plant_ess_max_charging_limit")
@@ -110,7 +235,7 @@ class Plant:
             print(f"{working_mode} !!!")
             time.sleep(5) # Allow time for HA to update
 
-    def set_control_limits(self, control_mode, discharge, charge, pv, grid_export, grid_import):
+    def set_control_limits(self, control_mode, discharge, charge, pv, grid_export, grid_import): # Set the control limits to the desired values
         #if(self.get_plant_mode() != control_mode):
         self.ha.set_number("number.sigen_plant_ess_max_discharging_limit", discharge)
         self.ha.set_number("number.sigen_plant_ess_max_charging_limit", charge)
@@ -159,8 +284,8 @@ class Plant:
 
 
         history = self.ha.get_history("sensor.sigen_plant_daily_load_consumption", start_time=start, end_time=end)
-        #print(f"start: {start}  \n end: {end}\nhistory: {history[2].time.date()}")
-
+        
+        
         # Remove any invalid states from the history list (Unavailable, None, etc)
         clean_history = []
         for hist in history:
@@ -195,8 +320,6 @@ class Plant:
                 day.pop(-1)
                 #print("Popping End of Day Data")
 
-
-
         avg_day = []
         dt = datetime.datetime.combine(
             datetime.date.today(),
@@ -204,7 +327,7 @@ class Plant:
         )
         time_bucket_size = 5 # Size of time bucket in Minutes 
         for i in range(int((24*60)/time_bucket_size)):
-            avg_day.append(StateClass(state=None, states=[], time=dt.time()))
+            avg_day.append(BinnedStateClass(avg_state=None, states=[], time=dt.time()))
             dt = dt + datetime.timedelta(minutes=time_bucket_size)
             
         
@@ -282,7 +405,7 @@ class Plant:
         for interval in avg_day:
             if(len(interval.states) == 0):
                 raise Exception(f"Failed to get state data for {interval.time} time period")
-            interval.state = round(sum(interval.states) / len(interval.states), 2)
+            interval.avg_state = round(sum(interval.states) / len(interval.states), 2)
 
             #print(f"avg: {interval.state} states: {interval.states}")
 
@@ -321,15 +444,15 @@ class Plant:
         avg_day_1_kwh = []
         avg_day_2_kwh = []
         for bin in avg_day:
-            avg_day_1_kwh.append(StateClass(state=bin.state, states=[], time=bin.time))
-            avg_day_2_kwh.append(StateClass(state=bin.state + avg_day[-1].state, states=[], time=bin.time))# Add the last kwh reading to the first to seemlesly transition to day 2
+            avg_day_1_kwh.append(BinnedStateClass(avg_state=bin.avg_state, states=[], time=bin.time))
+            avg_day_2_kwh.append(BinnedStateClass(avg_state=bin.avg_state + avg_day[-1].avg_state, states=[], time=bin.time))# Add the last kwh reading to the first to seemlesly transition to day 2
 
 
         avg_48hr_period_kwh = avg_day_1_kwh + avg_day_2_kwh
 
-        #print(f"Avg1: {[round(a.state) for a in avg_day_1_kwh]}  \n\nAvg2: {[round(a.state) for a in avg_day_2_kwh]}")
+        #print(f"Avg1: {[round(a.avg_state) for a in avg_day_1_kwh]}  \n\nAvg2: {[round(a.avg_state) for a in avg_day_2_kwh]}")
 
-        #print(f"Avg48: {[round(a.state,2) for a in avg_48hr_period_kwh[490:510]]}")
+        #print(f"Avg48: {[round(a.avg_state,2) for a in avg_48hr_period_kwh[490:510]]}")
 
         start_idx = None
         end_idx = None
@@ -345,14 +468,14 @@ class Plant:
         forecast_power = []
         for i in range(start_idx, end_idx):
             if(i == 0):
-                power = (avg_48hr_period_kwh[1].state - avg_48hr_period_kwh[0].state) / (5/60)
+                power = (avg_48hr_period_kwh[1].avg_state - avg_48hr_period_kwh[0].avg_state) / (5/60)
             else:
-                power = (avg_48hr_period_kwh[i].state - avg_48hr_period_kwh[i-1].state) / (5/60)
+                power = (avg_48hr_period_kwh[i].avg_state - avg_48hr_period_kwh[i-1].avg_state) / (5/60)
 
             if(power <= 0):
-                power = (avg_48hr_period_kwh[-1].state - avg_48hr_period_kwh[0].state)/48 #If we get a weird reading, replace it with the average
+                power = (avg_48hr_period_kwh[-1].avg_state - avg_48hr_period_kwh[0].avg_state)/48 #If we get a weird reading, replace it with the average
 
-            forecast_power.append(StateClass(state=power, states=[], time=bin.time))
+            forecast_power.append(BinnedStateClass(avg_state=power, states=[], time=bin.time))
         
         return forecast_power
             
@@ -364,17 +487,16 @@ class Plant:
         starting_kwh = None
         ending_kwh = None
         for bin in avg_day:
-            #print(f"time: {bin.time} state: {bin.state}")
+            #print(f"time: {bin.time} state: {bin.avg_state}")
             if(bin.time == rounded_current_time):
-                
-                starting_kwh = bin.state
+                starting_kwh = bin.avg_state
             elif(starting_kwh != None and bin.time == rounded_forecast_time):
-                ending_kwh = bin.state
+                ending_kwh = bin.avg_state
         
         if(ending_kwh == None):
             for bin in avg_day:
                 if(bin.time == rounded_forecast_time):
-                    ending_kwh = bin.state + avg_day[-1].state # If the number of hours wraps past midnight, add the last state from the previous day to the total kwh
+                    ending_kwh = bin.avg_state + avg_day[-1].avg_state # If the number of hours wraps past midnight, add the last avg_state from the previous day to the total kwh
         
         return ending_kwh-starting_kwh
     
@@ -439,6 +561,7 @@ class Plant:
 
 #from api_token_secrets import HA_URL, HA_TOKEN
 #plant = Plant(HA_URL, HA_TOKEN, errors=True) 
+#history = plant.plant_history(1)
 #load = plant.forecast_load_power(forecast_hours_from_now=24)
-#load = [round(load_state.state) for load_state in load]
+#load = [round(load_state.avg_state) for load_state in load]
 #print(load)

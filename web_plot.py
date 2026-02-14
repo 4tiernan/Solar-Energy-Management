@@ -199,7 +199,7 @@ def plot_mpc_results(st, output):
 
     fig.add_trace(go.Scatter(
         x=time_index,
-        y=round_list(output["load"]),
+        y=round_list(output["load_power"]),
         name="Load",
         line=dict(color="orange", shape="hv")
     ), row=1, col=1, secondary_y=False)
