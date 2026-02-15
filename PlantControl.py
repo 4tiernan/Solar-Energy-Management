@@ -1,4 +1,3 @@
-from ha_api import HomeAssistantAPI
 from dataclasses import dataclass
 import datetime
 from zoneinfo import ZoneInfo
@@ -19,12 +18,8 @@ class BinnedStateClass:
     time: datetime # Start time of the bin
 
 class Plant:
-    def __init__(self, HA_URL, TOKEN, errors=True):
-        self.ha = HomeAssistantAPI(
-            base_url=HA_URL,
-            token=TOKEN,
-            errors=errors
-        )
+    def __init__(self, ha):
+        self.ha = ha
         self.control_mode_options = [
             "Standby",
             "Maximum Self Consumption",

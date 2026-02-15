@@ -5,6 +5,9 @@ import datetime
 import traceback
 from api_token_secrets import HA_URL, HA_TOKEN, AMBER_API_TOKEN, SITE_ID
 
+# HA APP Setup Notes:
+# Proxmox CPU Type must be set to host not kvm64
+
 # HA MQTT Python Lib: https://pypi.org/project/ha-mqtt-discoverable/
 # nano /etc/systemd/system/energy-manager.service
 # journalctl -u energy-manager -f
@@ -36,18 +39,20 @@ while(started == False):
         from ha_api import HomeAssistantAPI
         import ha_mqtt
         from amber_api import AmberAPI
-        import PlantControl
+        from PlantControl import Plant
 
         amber = AmberAPI(AMBER_API_TOKEN, SITE_ID, errors=True)
         #amber_data = amber.get_data()
-        
-        plant = PlantControl.Plant(HA_URL, HA_TOKEN, errors=True) 
 
         ha = HomeAssistantAPI(
             base_url=HA_URL,
             token=HA_TOKEN,
             errors=True
         )
+        
+        plant = Plant(ha) 
+
+        
         ensure_remote_ems()
         
 
