@@ -259,6 +259,7 @@ class MPC:
 
             # Add the historical data to the mpc plan
             plotted_output = {
+                "historical_data_length": len(self.historical_data["time_index"]),
                 "time_index": self.historical_data["time_index"] + output["time_index"], 
                 "battery_power": self.historical_data["battery_power"] + output["battery_power"],
                 "soc": self.historical_data["soc"] + output["soc"],
