@@ -4,13 +4,12 @@ import numpy as np
 import cvxpy as cp
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-import pytz
+from zoneinfo import ZoneInfo
 import matplotlib.dates as mdates
 import time
 from energy_controller import ControlMode
 
-import pytz
-tz = pytz.timezone("Australia/Brisbane")
+HA_TZ = ZoneInfo("Australia/Brisbane") 
 
 
 import json
@@ -67,11 +66,15 @@ class MPC:
     def update_values(self, amber_data, inject_real_values = True):   
         current_soc = (self.plant.battery_soc / 100)*self.soc_max
         self.soc_init = min(current_soc, self.soc_max) #constrain the soc to within limits to stop solver from doing weird stuff
+
+        # ---------- Historical Data ---------- 
+        self.historical_data = self.plant.historical_data(hours=6) # Get the last 6 hours of historical data
+
         
         # ---------- Forecasts ----------
         # Load Forecast
         load_power_states = self.plant.forecast_load_power(forecast_hours_from_now=self.forecast_hrs) # Calculate the average load power
-        self.load_5min = [powerstate.state for powerstate in load_power_states]
+        self.load_5min = [powerstate.avg_state for powerstate in load_power_states]
         
         # Solar Forecast
         self.solar_5min = self.plant.forecast_solar_power(forecast_hours_from_now=self.forecast_hrs)
@@ -206,7 +209,7 @@ class MPC:
             grid_net = (grid_import.value - grid_export.value).tolist()
             #hours = np.arange(int(self.N_5min)) * self.dt_5min
 
-            now = datetime.now(tz).replace(second=0, microsecond=0)
+            now = datetime.now(HA_TZ).replace(second=0, microsecond=0)
             minute = (now.minute // 5) * 5
             now = now.replace(minute=minute)
             time_index = [now + timedelta(minutes=5 * i) for i in range(int(self.N_5min))]
@@ -246,15 +249,38 @@ class MPC:
                 "inverter_power": inverter_power.value.tolist(),
                 "solar_forecast": self.solar_5min,
                 "solar_used": solar_used.value.tolist(),
-                "load": self.load_5min,
+                "load_power": self.load_5min,
                 "soc_min": self.soc_min,
                 "soc_max": self.soc_max,
             }
-            output = self.convert_to_python(output)
-            plan_modes = self.determine_plan_modes(output)
-            output.update({"plan_modes": plan_modes})
-            mqtt_client.publish("home/mpc/output", json.dumps(output), retain=True)
-            return output
+            output = self.convert_to_python(output) # Ensure all arrays and data is in the plain python format, ie no numpy
+            plan_modes = self.determine_plan_modes(output) # Determine the control mode for each time period
+            output.update({"plan_modes": plan_modes}) # Add the control modes to the output to be plotted
+
+            # Add the historical data to the mpc plan
+            plotted_output = {
+                "historical_data_length": len(self.historical_data["time_index"]),
+                "time_index": self.historical_data["time_index"] + output["time_index"], 
+                "battery_power": self.historical_data["battery_power"] + output["battery_power"],
+                "soc": self.historical_data["soc"] + output["soc"],
+                "grid_net": self.historical_data["grid_power"] + output["grid_net"],
+                "prices_buy": self.historical_data["prices_buy"] + output["prices_buy"],
+                "prices_sell": self.historical_data["prices_sell"] + output["prices_sell"],
+                "profit_today": float(profit_today),
+                "profit_tomorrow": float(profit_tomorrow),
+                "inverter_power": self.historical_data["inverter_power"] + output["inverter_power"],
+                "solar_forecast": self.historical_data["solar_power"] + output["solar_forecast"],
+                "solar_used": self.historical_data["solar_power"] + output["solar_used"],
+                "load_power": self.historical_data["load_power"] + output["load_power"],
+                "soc_min": self.soc_min,
+                "soc_max": self.soc_max,
+                "plan_modes": self.historical_data["plan_modes"] + output["plan_modes"],
+            }            
+            
+        
+            mqtt_client.publish("home/mpc/output", json.dumps(plotted_output), retain=True)
+
+            return [output, plotted_output]
         
     def convert_to_python(self, obj): # Convert all np objects to python objects
         if isinstance(obj, np.ndarray):
@@ -269,7 +295,7 @@ class MPC:
         inverter_power = data["inverter_power"][increment]
         used_solar_power = data["solar_used"][increment]
         solar_available = data["solar_forecast"][increment]
-        load_power = data["load"][increment]
+        load_power = data["load_power"][increment]
         grid_net = data["grid_net"][increment] # if grid_net is positive we are importing power 
         battery_power = data["battery_power"][increment]
 
@@ -326,7 +352,7 @@ class MPC:
         return plan_modes
 
     def run(self, amber_data):
-        output = self.run_optimisation(amber_data)
+        [output, plotted_output] = self.run_optimisation(amber_data)
         control_mode = self.determine_control_mode(output)
         return output, control_mode
 
