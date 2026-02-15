@@ -2,13 +2,15 @@ import requests
 from typing import Any, Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 
 @dataclass
 class History:
     state: float
     time: datetime
 
-UTC_OFFSET = timedelta(hours=10)
+HA_TZ = ZoneInfo("Australia/Brisbane") 
 
 class HomeAssistantAPI:
     def __init__(self, base_url, token, errors):
@@ -58,7 +60,7 @@ class HomeAssistantAPI:
             }
         )
     
-    def get_history(self, entity_id, start_time=None, end_time=None):
+    def get_history(self, entity_id, start_time=None, end_time=None, type=float):
         """Fetch history for a specific entity.
         Home Assistant requires:
         /api/history/period/<start>?end_time=...&filter_entity_id=...
@@ -75,14 +77,22 @@ class HomeAssistantAPI:
         history = []
         date_format = "%Y-%m-%dT%H:%M:%S"
         for i in response[0]:
-            state_time = datetime.fromisoformat(i["last_updated"]) + UTC_OFFSET
-            try:
-                state_value = float(i["state"])
-            except:
-                state_value = None
-
+            state_time = datetime.fromisoformat(i["last_updated"])
+            state_time = state_time.astimezone(HA_TZ)
+            if(type == float):
+                try:
+                    state_value = float(i["state"])
+                except:
+                    state_value = None
+            elif(type == str):
+                try:
+                    state_value = str(i["state"])
+                except:
+                    state_value = None
+                
             history.append(History(state=state_value, time=state_time))
         return history
+    
     
     def set_switch_state(self, entity_id: str, state: bool):
         if(state == True):

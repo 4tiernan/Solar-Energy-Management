@@ -4,13 +4,12 @@ import numpy as np
 import cvxpy as cp
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-import pytz
+from zoneinfo import ZoneInfo
 import matplotlib.dates as mdates
 import time
 from energy_controller import ControlMode
 
-import pytz
-tz = pytz.timezone("Australia/Brisbane")
+HA_TZ = ZoneInfo("Australia/Brisbane") 
 
 
 import json
@@ -210,7 +209,7 @@ class MPC:
             grid_net = (grid_import.value - grid_export.value).tolist()
             #hours = np.arange(int(self.N_5min)) * self.dt_5min
 
-            now = datetime.now(tz).replace(second=0, microsecond=0)
+            now = datetime.now(HA_TZ).replace(second=0, microsecond=0)
             minute = (now.minute // 5) * 5
             now = now.replace(minute=minute)
             time_index = [now + timedelta(minutes=5 * i) for i in range(int(self.N_5min))]
@@ -258,22 +257,29 @@ class MPC:
             plan_modes = self.determine_plan_modes(output) # Determine the control mode for each time period
             output.update({"plan_modes": plan_modes}) # Add the control modes to the output to be plotted
 
-
-            plotted_output = output # Create the output we send to the plotter 
-            plotted_output["time_index"] = self.historical_data["time_index"][0:-1] + output["time_index"] # Add the historical data to the mpc plan (removing the most recent historical data which is already in the mpc plan ([0:-1]))
-            plotted_output["soc"] = self.historical_data["soc"][0:-1] + output["soc"]
-            plotted_output["battery_power"] = self.historical_data["battery_power"][0:-1] + output["battery_power"]
-            plotted_output["inverter_power"] = self.historical_data["inverter_power"][0:-1] + output["inverter_power"]
-            plotted_output["solar_power"] = self.historical_data["solar_power"][0:-1] + output["solar_used"]
-            plotted_output["load_power"] = self.historical_data["load_power"][0:-1] + output["load_power"]
-            plotted_output["grid_net"] = self.historical_data["grid_power"][0:-1] + output["grid_net"]
-            plotted_output["solar_forecast"] = self.historical_data["solar_power"][0:-1] + output["solar_forecast"]
-            
+            # Add the historical data to the mpc plan
+            plotted_output = {
+                "time_index": self.historical_data["time_index"] + output["time_index"], 
+                "battery_power": self.historical_data["battery_power"] + output["battery_power"],
+                "soc": self.historical_data["soc"] + output["soc"],
+                "grid_net": self.historical_data["grid_power"] + output["grid_net"],
+                "prices_buy": self.historical_data["prices_buy"] + output["prices_buy"],
+                "prices_sell": self.historical_data["prices_sell"] + output["prices_sell"],
+                "profit_today": float(profit_today),
+                "profit_tomorrow": float(profit_tomorrow),
+                "inverter_power": self.historical_data["inverter_power"] + output["inverter_power"],
+                "solar_forecast": self.historical_data["solar_power"] + output["solar_forecast"],
+                "solar_used": self.historical_data["solar_power"] + output["solar_used"],
+                "load_power": self.historical_data["load_power"] + output["load_power"],
+                "soc_min": self.soc_min,
+                "soc_max": self.soc_max,
+                "plan_modes": self.historical_data["plan_modes"] + output["plan_modes"],
+            }            
             
         
             mqtt_client.publish("home/mpc/output", json.dumps(plotted_output), retain=True)
 
-            return output
+            return [output, plotted_output]
         
     def convert_to_python(self, obj): # Convert all np objects to python objects
         if isinstance(obj, np.ndarray):
@@ -345,7 +351,7 @@ class MPC:
         return plan_modes
 
     def run(self, amber_data):
-        output = self.run_optimisation(amber_data)
+        [output, plotted_output] = self.run_optimisation(amber_data)
         control_mode = self.determine_control_mode(output)
         return output, control_mode
 
