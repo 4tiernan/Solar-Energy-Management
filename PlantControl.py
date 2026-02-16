@@ -96,6 +96,8 @@ class Plant:
         solar_power_state_history = self.ha.get_history("sensor.sigen_plant_pv_power", start_time=start, end_time=end)
         load_power_state_history = self.ha.get_history("sensor.sigen_plant_consumed_power", start_time=start, end_time=end)
         grid_power_state_history = self.ha.get_history("sensor.sigen_plant_grid_active_power", start_time=start, end_time=end)
+        grid_import_kwh_state_history = self.ha.get_history("sensor.sigen_plant_daily_grid_import_energy", start_time=start, end_time=end)
+        grid_export_kwh_state_history = self.ha.get_history("sensor.sigen_plant_daily_grid_export_energy", start_time=start, end_time=end)
 
         feed_in_state_history = self.ha.get_history("sensor.energy_manager_device_feed_in_price", start_time=start, end_time=end) 
         general_price_state_history = self.ha.get_history("sensor.energy_manager_device_general_price", start_time=start, end_time=end)
@@ -109,6 +111,8 @@ class Plant:
         binned_load_power_state_history = self.bin_data(load_power_state_history, bin_period=bin_period, start_bin_datetime=start, bin_qty=data_bin_qty)
         binned_grid_power_state_history = self.bin_data(grid_power_state_history, bin_period=bin_period, start_bin_datetime=start, bin_qty=data_bin_qty)
 
+        binned_grid_import_kwh_state_history = self.bin_data(grid_import_kwh_state_history, bin_period=bin_period, start_bin_datetime=start, bin_qty=data_bin_qty)
+        binned_grid_export_kwh_state_history = self.bin_data(grid_export_kwh_state_history, bin_period=bin_period, start_bin_datetime=start, bin_qty=data_bin_qty)
         
         binned_feed_in_state_history = self.bin_data(feed_in_state_history, bin_period=bin_period, start_bin_datetime=start, bin_qty=data_bin_qty, interpolation_method="step")
         binned_general_price_state_history = self.bin_data(general_price_state_history, bin_period=bin_period, start_bin_datetime=start, bin_qty=data_bin_qty, interpolation_method="step")# Step Interpolation as prices dont gradually change
@@ -129,9 +133,41 @@ class Plant:
             "prices_sell": [state.avg_state/100.0 for state in binned_feed_in_state_history], # Converted to dollars from cents
             "prices_buy": [state.avg_state/100.0 for state in binned_general_price_state_history],
             "plan_modes": [state.avg_state for state in binned_working_mode_state_history],
+            "grid_import_kwh": [state.avg_state for state in binned_grid_import_kwh_state_history],
+            "grid_export_kwh": [state.avg_state for state in binned_grid_export_kwh_state_history],
         }
         return output
 
+    def calculate_today_profit_cost(self):
+        # Get today's historical data
+        hours_since_midnight = (datetime.datetime.now(HA_TZ) - datetime.datetime.now(HA_TZ).replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() / 3600
+        history = self.historical_data(hours=hours_since_midnight, bin_period=5)
+
+        # Convert lists to numpy arrays
+        export_cumsum = np.array(history["grid_export_kwh"])
+        import_cumsum = np.array(history["grid_import_kwh"])
+        prices_sell = np.array(history["prices_sell"])
+        prices_buy = np.array(history["prices_buy"])
+
+        # Compute per-bin kWh by taking the difference between consecutive cumulative readings
+        export_kwh_bin = np.diff(export_cumsum, prepend=0)  # prepend 0 so first bin is correct
+        import_kwh_bin = np.diff(import_cumsum, prepend=0)
+
+        # Element-wise multiply by corresponding prices
+        profit_per_bin = export_kwh_bin * prices_sell
+        cost_per_bin = import_kwh_bin * prices_buy
+
+        # Sum up total profit, total cost, net profit
+        total_profit = np.sum(profit_per_bin)
+        total_cost = np.sum(cost_per_bin)
+        net_profit = total_profit - total_cost
+
+        return {
+            "total_export_revenue": round(total_profit, 2),
+            "total_import_cost": round(total_cost, 2),
+            "net_profit": round(net_profit, 2)
+        }
+    
     def old_unused_bin_data(self, history_array, bin_period_minutes, bin_qty=None):
 
         if not history_array:
@@ -686,8 +722,17 @@ class Plant:
         
         return solar_5min[:N_5min] # return the solar forecast but limit the list length to the requested length
 
-#from api_token_secrets import HA_URL, HA_TOKEN
-#plant = Plant(HA_URL, HA_TOKEN, errors=True) 
+from ha_api import HomeAssistantAPI
+from api_token_secrets import HA_URL, HA_TOKEN
+ha = HomeAssistantAPI(
+            base_url=HA_URL,
+            token=HA_TOKEN,
+            errors=True
+        )
+
+plant = Plant(ha) 
+print(plant.calculate_today_profit_cost())
+
 #now = datetime.datetime.now(HA_TZ)
 #hours = 1
 #bin_period =5
